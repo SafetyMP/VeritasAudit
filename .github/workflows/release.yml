@@ -1,0 +1,76 @@
+name: Generate GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    name: Compile & Publish Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Monorepo Workspaces Dependencies
+        run: npm ci
+
+      - name: Compile Codebase Workspaces
+        run: npm run build
+
+      # ------------------------------------------
+      # AUTOMATED PACKAGING OF BUILD ARTIFACTS
+      # ------------------------------------------
+      - name: Package Release Assets
+        run: |
+          echo "📦 Packaging compiled distribution assets..."
+          
+          # Create a temporary staging folder
+          mkdir -p veritasaudit-dist
+          
+          # Copy compiled apps & packages
+          cp -r apps/secure-gateway/dist veritasaudit-dist/gateway-dist
+          cp -r apps/admin-dashboard/dist veritasaudit-dist/dashboard-dist
+          cp -r packages/core-types/dist veritasaudit-dist/core-types-dist
+          cp -r packages/crypto-utils/dist veritasaudit-dist/crypto-utils-dist
+          cp -r packages/database/dist veritasaudit-dist/database-dist
+          cp -r packages/database/data veritasaudit-dist/database-seed-data
+          
+          # Copy governance and config assets
+          cp policy.cedar veritasaudit-dist/
+          cp protect-mcp.config.json veritasaudit-dist/
+          cp README.md veritasaudit-dist/
+          cp CLAUDE.md veritasaudit-dist/
+          cp -r scripts veritasaudit-dist/
+          
+          # Generate compressed archives
+          tar -czf veritasaudit-release-${{ github.ref_name }}.tar.gz veritasaudit-dist
+          zip -r veritasaudit-release-${{ github.ref_name }}.zip veritasaudit-dist
+          
+          echo "✅ Release packaging complete!"
+
+      # ------------------------------------------
+      # CREATE GITHUB RELEASE WITH ASSETS
+      # ------------------------------------------
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            veritasaudit-release-${{ github.ref_name }}.tar.gz
+            veritasaudit-release-${{ github.ref_name }}.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
