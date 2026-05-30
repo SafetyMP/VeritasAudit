@@ -1,0 +1,415 @@
+.app-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  min-height: 100vh;
+}
+
+/* Header */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid hsl(var(--border-color));
+  padding-bottom: 1.5rem;
+  gap: 1rem;
+}
+
+.brand-section h1 {
+  font-family: var(--font-display);
+  font-size: 2.2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, hsl(var(--text-primary)) 30%, hsla(var(--primary), 0.8) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.brand-section p {
+  color: hsl(var(--text-secondary));
+  font-size: 0.95rem;
+  margin-top: 0.3rem;
+}
+
+.system-status {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  background: hsla(var(--text-primary), 0.03);
+  padding: 0.5rem 1rem;
+  border-radius: 30px;
+  border: 1px solid hsl(var(--border-color));
+}
+
+.status-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: hsl(var(--success));
+  box-shadow: 0 0 10px hsla(var(--success), 0.6);
+  animation: pulseGlow 2s infinite;
+}
+
+.status-label {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: hsl(var(--text-primary));
+}
+
+/* Dashboard Layout */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Card Structures */
+.card-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid hsl(var(--border-color));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: hsl(var(--text-primary));
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.card-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+}
+
+/* Table Design */
+.table-container {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid hsl(var(--border-color));
+}
+
+.custom-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.custom-table th {
+  background: hsla(var(--text-primary), 0.02);
+  color: hsl(var(--text-secondary));
+  font-family: var(--font-display);
+  font-weight: 600;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid hsl(var(--border-color));
+}
+
+.custom-table td {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid hsl(var(--border-color));
+  color: hsl(var(--text-primary));
+}
+
+.custom-table tr:last-child td {
+  border-bottom: none;
+}
+
+.custom-table tr:hover td {
+  background: hsla(var(--text-primary), 0.01);
+}
+
+/* Forms */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.form-group label {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: hsl(var(--text-secondary));
+}
+
+.form-control {
+  background: hsla(var(--text-primary), 0.04);
+  border: 1px solid hsl(var(--border-color));
+  border-radius: 8px;
+  color: hsl(var(--text-primary));
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  font-family: var(--font-body);
+  transition: all 0.2s ease;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 3px hsla(var(--primary), 0.15);
+  background: hsla(var(--text-primary), 0.06);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+/* Verifiable Receipts Cards */
+.receipt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 0.3rem;
+}
+
+.receipt-card {
+  background: hsla(var(--text-primary), 0.02);
+  border: 1px solid hsl(var(--border-color));
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  transition: border-color 0.2s ease;
+}
+
+.receipt-card:hover {
+  border-color: hsla(var(--primary), 0.3);
+}
+
+.receipt-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.receipt-tool {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: hsl(var(--text-primary));
+}
+
+.receipt-digest {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: hsl(var(--text-muted));
+  background: hsla(var(--text-primary), 0.04);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+}
+
+.receipt-reason {
+  font-size: 0.85rem;
+  color: hsl(var(--text-secondary));
+}
+
+.receipt-signature-block {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: hsla(var(--success), 0.04);
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  border: 1px dashed hsla(var(--success), 0.2);
+  font-size: 0.8rem;
+}
+
+.signature-verified {
+  color: hsl(var(--success));
+  font-family: var(--font-display);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Offline Receipt Verifier */
+.verifier-box {
+  background: hsla(var(--primary), 0.03);
+  border: 1px dashed hsla(var(--primary), 0.3);
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.verification-result {
+  padding: 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  animation: slideInUp 0.3s ease forwards;
+}
+
+.result-valid {
+  background: hsla(var(--success), 0.1);
+  border: 1px solid hsla(var(--success), 0.3);
+  color: hsl(var(--success));
+}
+
+.result-invalid {
+  background: hsla(var(--danger), 0.1);
+  border: 1px solid hsla(var(--danger), 0.3);
+  color: hsl(var(--danger));
+}
+
+/* Auditor section / Findings */
+.findings-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.finding-card {
+  border-radius: 12px;
+  border: 1px solid hsl(var(--border-color));
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.finding-card:hover {
+  transform: translateX(3px);
+}
+
+.finding-card-high {
+  border-left: 4px solid hsl(var(--danger));
+}
+
+.finding-card-medium {
+  border-left: 4px solid hsl(var(--warning));
+}
+
+.finding-card-low {
+  border-left: 4px solid hsl(var(--info));
+}
+
+.finding-card-info {
+  border-left: 4px solid hsl(var(--text-muted));
+}
+
+.finding-header {
+  padding: 1rem 1.25rem;
+  background: hsla(var(--text-primary), 0.02);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid hsl(var(--border-color));
+}
+
+.finding-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1rem;
+  color: hsl(var(--text-primary));
+}
+
+.finding-body {
+  padding: 1.25rem;
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.finding-meta {
+  display: flex;
+  gap: 1.5rem;
+  color: hsl(var(--text-secondary));
+  font-size: 0.8rem;
+}
+
+.finding-meta span strong {
+  color: hsl(var(--text-primary));
+}
+
+.finding-evidence {
+  font-family: monospace;
+  background: hsla(var(--bg-primary), 0.8);
+  border: 1px solid hsl(var(--border-color));
+  padding: 0.75rem;
+  border-radius: 6px;
+  color: hsl(var(--text-primary));
+  overflow-x: auto;
+  white-space: pre-wrap;
+  font-size: 0.75rem;
+}
+
+.finding-remediation {
+  background: hsla(var(--success), 0.04);
+  border: 1px solid hsla(var(--success), 0.15);
+  padding: 0.75rem;
+  border-radius: 6px;
+  color: hsl(var(--text-primary));
+}
+
+/* Console simulation */
+.console-box {
+  background: #000;
+  border: 1px solid hsl(var(--border-color));
+  border-radius: 12px;
+  font-family: monospace;
+  font-size: 0.8rem;
+  padding: 1rem;
+  color: #00ff00;
+  height: 200px;
+  overflow-y: auto;
+  box-shadow: inset 0 0 10px rgba(0,255,0,0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.console-line {
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.console-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-top: 1px solid #111;
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.console-prompt {
+  color: hsl(var(--primary));
+  font-weight: bold;
+}
+
+.console-field {
+  background: transparent;
+  border: none;
+  color: #00ff00;
+  font-family: monospace;
+  font-size: 0.8rem;
+  flex: 1;
+  outline: none;
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@veritas/secure-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && node dist/index.js",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@veritas/core-types": "1.0.0",
+    "@veritas/crypto-utils": "1.0.0",
+    "@veritas/database": "1.0.0",
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@types/node": "^20.12.12",
+    "typescript": "^5.4.5"
+  }
+}
