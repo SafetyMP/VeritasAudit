@@ -208,6 +208,3 @@ The `protect-mcp.config.json` governs the gateway runtime enforcement behavior v
 * **Secrets Check**: 100% Secure. Absolutely no passwords, raw private keys, or actual developer credentials are committed.
 * **Lockfile Fidelity**: Standardized with an `npm` lockfile (`package-lock.json`).
 * **Test Coverage**: Tested and verified with a built-in zero-dependency Node.js test runner covering Ed25519 cryptography, Cedar dynamic AST parser evaluation, and shell command allowlist audits.
-
----
-*Developed and verified by Antigravity.*
