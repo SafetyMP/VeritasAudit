@@ -2,11 +2,13 @@ name: Generate GitHub Release
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    branches:
+      - main
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   draft-release:
@@ -16,6 +18,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -55,22 +59,15 @@ jobs:
           cp -r scripts fidusgate-dist/
           
           # Generate compressed archives
-          tar -czf fidusgate-release-${{ github.ref_name }}.tar.gz fidusgate-dist
-          zip -r fidusgate-release-${{ github.ref_name }}.zip fidusgate-dist
+          tar -czf fidusgate-release-dist.tar.gz fidusgate-dist
+          zip -r fidusgate-release-dist.zip fidusgate-dist
           
           echo "✅ Release packaging complete!"
 
       # ------------------------------------------
-      # CREATE GITHUB RELEASE WITH ASSETS
+      # TRIGGER AUTOMATED SEMANTIC RELEASE
       # ------------------------------------------
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            fidusgate-release-${{ github.ref_name }}.tar.gz
-            fidusgate-release-${{ github.ref_name }}.zip
-          draft: false
-          prerelease: false
-          generate_release_notes: true
+      - name: Semantic Release Action
+        run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

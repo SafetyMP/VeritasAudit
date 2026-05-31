@@ -72,7 +72,7 @@ test('Ed25519 Public-Key Cryptography Tests', async (t) => {
       ...receipt,
       signature: {
         ...receipt.signature,
-        sig: receipt.signature.sig.replace(/^[0-9a-f]/, '0') // modify first hex char
+        sig: receipt.signature.sig[0] === '0' ? '1' + receipt.signature.sig.slice(1) : '0' + receipt.signature.sig.slice(1)
       }
     };
 

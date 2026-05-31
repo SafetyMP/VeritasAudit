@@ -1,5 +1,6 @@
 {
   "name": "fidusgate-root",
+  "version": "1.0.0",
   "private": true,
   "engines": {
     "node": ">=20.0.0"
@@ -16,9 +17,13 @@
     "lint": "turbo run lint",
     "ci": "bash scripts/ci-verify.sh",
     "bootstrap": "bash scripts/bootstrap.sh",
-    "sandbox": "bash scripts/sandbox-execute.sh"
+    "sandbox": "bash scripts/sandbox-execute.sh",
+    "release": "semantic-release"
   },
   "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "semantic-release": "^23.0.8",
     "turbo": "^2.0.4",
     "typescript": "^5.4.5"
   }
