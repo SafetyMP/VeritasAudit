@@ -71,6 +71,13 @@ fi
 # Proactively ensure the memory folder exists on the host
 mkdir -p "$MOUNT_DIR/.memory"
 
+# Parse resource constraints from environment or default safely
+CPU_LIMIT=${SANDBOX_CPU_LIMIT:-"1"}
+MEM_LIMIT=${SANDBOX_MEM_LIMIT:-"2g"}
+TIMEOUT_LIMIT=${SANDBOX_TIMEOUT:-"300"}
+
+echo "🔒 Enforcing resource limits: CPU=$CPU_LIMIT, RAM=$MEM_LIMIT, Hard-Timeout=${TIMEOUT_LIMIT}s"
+
 # Clear any previous pending patches
 rm -f "$MOUNT_DIR/.memory/pending-sandbox.patch"
 
@@ -81,8 +88,10 @@ if [ -n "$RUN_USER" ]; then
     USER_FLAG="--user $RUN_USER"
 fi
 
-docker run --name "$CONTAINER_NAME" \
+timeout "$TIMEOUT_LIMIT" docker run --name "$CONTAINER_NAME" \
   $RUNTIME_FLAG \
+  --cpus="$CPU_LIMIT" \
+  --memory="$MEM_LIMIT" \
   -v "$MOUNT_DIR:/workspace:ro" \
   -v "$MOUNT_DIR/.memory:/workspace-memory:rw" \
   --network none \
@@ -97,7 +106,7 @@ docker run --name "$CONTAINER_NAME" \
       rel=\${dir#/workspace/}; \
       mkdir -p \"/app/\${rel%/*}\" 2>/dev/null; \
       ln -s \"\$dir\" \"/app/\$rel\" 2>/dev/null; \
-    done && \
+      done && \
     cd /app && \
     echo '🚀 Executing command in sandboxed environment...' && \
     $COMMAND
@@ -105,13 +114,23 @@ docker run --name "$CONTAINER_NAME" \
 
 EXIT_CODE=$?
 
+# Intercept hard timeout kills (UNIX timeout tool returns exit code 124 on SIGTERM timeout)
+if [ $EXIT_CODE -eq 124 ]; then
+    echo "❌ Error: Sandboxed command execution timed out after ${TIMEOUT_LIMIT}s! Forcefully terminating container."
+    docker kill "$CONTAINER_NAME" >/dev/null 2>&1
+    docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1
+    exit 124
+fi
+
 # Extract the diff patch safely from within container if success
 if [ $EXIT_CODE -eq 0 ]; then
     echo "✅ Sandbox execution succeeded. Synthesizing safe git diff patch..."
     
     # Generate the diff between the read-only /workspace and modified /app inside container
     # Clean the path prefixes (/workspace/ -> a/ and /app/ -> b/) to make it standard git apply compatible
-    docker run --name "${CONTAINER_NAME}-diff" \
+    timeout 60 docker run --name "${CONTAINER_NAME}-diff" \
+      --cpus="$CPU_LIMIT" \
+      --memory="$MEM_LIMIT" \
       -v "$MOUNT_DIR:/workspace:ro" \
       -v "$MOUNT_DIR/.memory:/workspace-memory:rw" \
       --network none \

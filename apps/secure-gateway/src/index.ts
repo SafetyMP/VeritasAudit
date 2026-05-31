@@ -5,7 +5,9 @@ import { execSync } from 'node:child_process';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { FidusGateDatabase, CommandLogEntry } from '@fidusgate/database';
+import * as http from 'node:http';
 import { verifyReceipt } from '@fidusgate/crypto-utils';
+import { startMcpServer } from './mcp-server';
 import { Transaction, AuditReceipt, SecurityFinding } from '@fidusgate/core-types';
 import { CedarEvaluator } from './cedar-evaluator';
 import { isCommandLineSecure } from './command-auditor';
@@ -368,6 +370,7 @@ const plmTracker = new PLMComplianceTracker();
 // SRE Telemetry Counters
 let fidusgatePolicyEvaluationsAllow = 0;
 let fidusgatePolicyEvaluationsDeny = 0;
+let activeSandboxContainers = 0;
 
 
 // Load FidusGate MCP Configuration and policies
@@ -382,8 +385,25 @@ if (fs.existsSync(configPath)) {
 }
 
 const policyPath = path.resolve(process.cwd(), config.policy || 'policy.cedar');
-const cedarEvaluator = new CedarEvaluator(policyPath);
+let cedarEvaluator = new CedarEvaluator(policyPath);
 log('info', `Loaded TS Cedar Policy Parser with ${cedarEvaluator.getRulesCount()} rules. Enforcing mode: ${config.mode.toUpperCase()}`);
+
+// Implement safe filesystem watcher for hot-reloading policy changes
+fs.watch(process.cwd(), (eventType, filename) => {
+  if (filename === 'policy.cedar' || filename === 'policy.cedarschema') {
+    log('info', `Detected filesystem change in ${filename}. Initiating hot-reload...`);
+    try {
+      const newEvaluator = new CedarEvaluator(policyPath);
+      // Validate the evaluator has successfully parsed rules
+      if (newEvaluator.getRulesCount() >= 0) {
+        cedarEvaluator = newEvaluator;
+        log('info', `✅ HOT-RELOAD SUCCESSFUL: Loaded new Cedar policy with ${cedarEvaluator.getRulesCount()} rules.`);
+      }
+    } catch (e: any) {
+      log('error', `❌ HOT-RELOAD FAILED: Policy has compilation/syntax errors. Keeping current active policy. Error: ${e.message}`);
+    }
+  }
+});
 
 app.use(cors());
 app.use(express.json());
@@ -1030,40 +1050,45 @@ app.post('/api/sandbox/execute', requireAuth(['admin']), async (req, res) => {
     const workspacePath = path.resolve(__dirname, '..', '..', '..');
     const sandboxCmd = `bash scripts/sandbox-execute.sh "${command}" "${workspacePath}"`;
     
+    activeSandboxContainers++;
     try {
-      const logs = execSync(sandboxCmd, { cwd: workspacePath, encoding: 'utf8', stdio: 'pipe' });
-      
-      // Persist forensic log for successful run
-      await db.addCommandLog({
-        id: `cmd_${Math.floor(100000 + Math.random() * 900000)}`,
-        timestamp: new Date().toISOString(),
-        command,
-        user: userEmail,
-        role: userRole,
-        status: 'success',
-        exitCode: 0,
-        cedarDecision: 'allow'
-      });
+      try {
+        const logs = execSync(sandboxCmd, { cwd: workspacePath, encoding: 'utf8', stdio: 'pipe' });
+        
+        // Persist forensic log for successful run
+        await db.addCommandLog({
+          id: `cmd_${Math.floor(100000 + Math.random() * 900000)}`,
+          timestamp: new Date().toISOString(),
+          command,
+          user: userEmail,
+          role: userRole,
+          status: 'success',
+          exitCode: 0,
+          cedarDecision: 'allow'
+        });
 
-      res.json({ logs, status: 'success' });
-    } catch (error: any) {
-      log('error', `Web console command execution failed`, error.message);
-      const exitCode = error.status || 1;
-      const errorLogs = [error.stdout, error.stderr].filter(Boolean).join('\n') || error.message;
+        res.json({ logs, status: 'success' });
+      } catch (error: any) {
+        log('error', `Web console command execution failed`, error.message);
+        const exitCode = error.status || 1;
+        const errorLogs = [error.stdout, error.stderr].filter(Boolean).join('\n') || error.message;
 
-      // Persist forensic log for failed run
-      await db.addCommandLog({
-        id: `cmd_${Math.floor(100000 + Math.random() * 900000)}`,
-        timestamp: new Date().toISOString(),
-        command,
-        user: userEmail,
-        role: userRole,
-        status: 'failed',
-        exitCode,
-        cedarDecision: 'allow'
-      });
+        // Persist forensic log for failed run
+        await db.addCommandLog({
+          id: `cmd_${Math.floor(100000 + Math.random() * 900000)}`,
+          timestamp: new Date().toISOString(),
+          command,
+          user: userEmail,
+          role: userRole,
+          status: 'failed',
+          exitCode,
+          cedarDecision: 'allow'
+        });
 
-      res.status(500).json({ error: 'Sandboxed execution failed', logs: errorLogs, status: 'failed' });
+        res.status(500).json({ error: 'Sandboxed execution failed', logs: errorLogs, status: 'failed' });
+      }
+    } finally {
+      activeSandboxContainers--;
     }
   } catch (error: any) {
     res.status(500).json({ error: 'Sandbox execution exception occurred', message: error.message });
@@ -1476,49 +1501,98 @@ app.get('/api/logs/compliance/:logId/export', requireAuth(['admin', 'auditor']),
       fidusgateEngineVersion: "1.2.0-Enterprise"
     };
 
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename=fidusgate-compliance-receipt-${logId}.json`);
-    res.json(complianceEnvelope);
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Content-Disposition': `attachment; filename="compliance-receipt-${logId}.json"`
+    });
+    res.end(JSON.stringify(complianceEnvelope, null, 2));
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to generate compliance package', message: err.message });
   }
 });
 
-// 14. GET /api/metrics - Live SRE Prometheus Telemetry metrics (Anonymous/Public)
-app.get('/api/metrics', (req, res) => {
+// 23. POST /api/policy/reload - Trigger programmatic Cedar policy hot-reload (Role: admin, auditor)
+app.post('/api/policy/reload', requireAuth(['admin', 'auditor']), (req, res) => {
   try {
-    const devopsState = devopsTracker.getState();
-    const ibpState = ibpTracker.getState();
-    const plmState = plmTracker.getState();
-
-    const output = [
-      `# HELP fidusgate_gateway_policy_evaluations_total Total count of Cedar policy evaluations.`,
-      `# TYPE fidusgate_gateway_policy_evaluations_total counter`,
-      `fidusgate_gateway_policy_evaluations_total{decision="allow"} ${fidusgatePolicyEvaluationsAllow}`,
-      `fidusgate_gateway_policy_evaluations_total{decision="deny"} ${fidusgatePolicyEvaluationsDeny}`,
-      ``,
-      `# HELP fidusgate_ibp_tokens_burned_total Running sum of estimated tokens burned in this session.`,
-      `# TYPE fidusgate_ibp_tokens_burned_total counter`,
-      `fidusgate_ibp_tokens_burned_total ${ibpState.tokensConsumed}`,
-      ``,
-      `# HELP fidusgate_plm_active_directives Current count of unaligned active directives.`,
-      `# TYPE fidusgate_plm_active_directives gauge`,
-      `fidusgate_plm_active_directives ${plmState.activeDirectives ? plmState.activeDirectives.length : 0}`,
-      ``,
-      `# HELP fidusgate_devops_compliance_status DevOps compliance status by gate (1=OK, 0=Failed).`,
-      `# TYPE fidusgate_devops_compliance_status gauge`,
-      `fidusgate_devops_compliance_status{gate="pipeline"} ${devopsState.pipelineVerified ? 1 : 0}`,
-      `fidusgate_devops_compliance_status{gate="security"} ${devopsState.securityAudited ? 1 : 0}`,
-      `fidusgate_devops_compliance_status{gate="drift"} ${devopsState.hamChecked ? 1 : 0}`
-    ].join('\n');
-
-    res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
-    res.send(output);
-  } catch (error: any) {
-    res.status(500).send('Internal Server Error while generating metrics');
+    const newEvaluator = new CedarEvaluator(policyPath);
+    if (newEvaluator.getRulesCount() >= 0) {
+      cedarEvaluator = newEvaluator;
+      log('info', `✅ HTTP HOT-RELOAD SUCCESSFUL: Loaded new Cedar policy with ${cedarEvaluator.getRulesCount()} rules.`);
+      res.json({ success: true, message: `Loaded new Cedar policy with ${cedarEvaluator.getRulesCount()} rules.` });
+    } else {
+      res.status(400).json({ error: 'Evaluator initialized but has no rules.' });
+    }
+  } catch (e: any) {
+    log('error', `❌ HTTP HOT-RELOAD FAILED: Policy has compilation/syntax errors. Keeping current active policy. Error: ${e.message}`);
+    res.status(400).json({ error: 'Policy compilation failed', message: e.message });
   }
 });
 
-app.listen(port, () => {
-  log('info', `FidusGate Security Gateway API listening on Port ${port}`);
+// Expose metrics on a secure, dedicated admin-only port 3002
+const metricsPort = process.env.METRICS_PORT || 3002;
+const metricsServer = http.createServer(async (req, res) => {
+  if (req.url === '/metrics' && req.method === 'GET') {
+    try {
+      const devopsState = devopsTracker.getState();
+      const ibpState = ibpTracker.getState();
+      const plmState = plmTracker.getState();
+      const dbHealth = await db.healthCheck();
+
+      const output = [
+        `# HELP fidusgate_gateway_policy_evaluations_total Total count of Cedar policy evaluations.`,
+        `# TYPE fidusgate_gateway_policy_evaluations_total counter`,
+        `fidusgate_gateway_policy_evaluations_total{decision="allow"} ${fidusgatePolicyEvaluationsAllow}`,
+        `fidusgate_gateway_policy_evaluations_total{decision="deny"} ${fidusgatePolicyEvaluationsDeny}`,
+        ``,
+        `# HELP fidusgate_ibp_tokens_burned_total Running sum of estimated tokens burned in this session.`,
+        `# TYPE fidusgate_ibp_tokens_burned_total counter`,
+        `fidusgate_ibp_tokens_burned_total ${ibpState.tokensConsumed}`,
+        ``,
+        `# HELP fidusgate_plm_active_directives Current count of unaligned active directives.`,
+        `# TYPE fidusgate_plm_active_directives gauge`,
+        `fidusgate_plm_active_directives ${plmState.activeDirectives ? plmState.activeDirectives.length : 0}`,
+        ``,
+        `# HELP fidusgate_devops_compliance_status DevOps compliance status by gate (1=OK, 0=Failed).`,
+        `# TYPE fidusgate_devops_compliance_status gauge`,
+        `fidusgate_devops_compliance_status{gate="pipeline"} ${devopsState.pipelineVerified ? 1 : 0}`,
+        `fidusgate_devops_compliance_status{gate="security"} ${devopsState.securityAudited ? 1 : 0}`,
+        `fidusgate_devops_compliance_status{gate="drift"} ${devopsState.hamChecked ? 1 : 0}`,
+        ``,
+        `# HELP fidusgate_sandbox_active_containers Number of active sandbox containers currently running.`,
+        `# TYPE fidusgate_sandbox_active_containers gauge`,
+        `fidusgate_sandbox_active_containers ${activeSandboxContainers}`,
+        ``,
+        `# HELP fidusgate_database_status Database connection pool health status (1=OK, 0=Failed).`,
+        `# TYPE fidusgate_database_status gauge`,
+        `fidusgate_database_status ${dbHealth.status === 'healthy' ? 1 : 0}`,
+        ``,
+        `# HELP fidusgate_database_latency_ms Connection ping latency in milliseconds.`,
+        `# TYPE fidusgate_database_latency_ms gauge`,
+        `fidusgate_database_latency_ms ${dbHealth.latencyMs}`
+      ].join('\n');
+
+      res.writeHead(200, {
+        'Content-Type': 'text/plain; version=0.0.4; charset=utf-8'
+      });
+      res.end(output);
+    } catch (error: any) {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Internal Server Error while generating metrics');
+    }
+  } else {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not Found');
+  }
 });
+
+if (process.argv.includes('--mcp')) {
+  startMcpServer();
+} else {
+  app.listen(port, () => {
+    log('info', `FidusGate Security Gateway API listening on Port ${port}`);
+  });
+
+  metricsServer.listen(metricsPort, () => {
+    log('info', `FidusGate SRE Telemetry Server listening on Port ${metricsPort}`);
+  });
+}

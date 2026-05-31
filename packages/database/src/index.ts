@@ -423,6 +423,26 @@ export class FidusGateDatabase {
     writeJsonAtomic(COMMAND_LOGS_FILE, list);
   }
 
+  public async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; latencyMs: number; error?: string }> {
+    if (!this.usePostgres || !this.prisma) {
+      return { status: 'healthy', latencyMs: 0 };
+    }
+    const start = Date.now();
+    try {
+      await this.prisma.$queryRaw`SELECT 1`;
+      return {
+        status: 'healthy',
+        latencyMs: Date.now() - start
+      };
+    } catch (e: any) {
+      return {
+        status: 'unhealthy',
+        latencyMs: Date.now() - start,
+        error: e.message
+      };
+    }
+  }
+
   public async clearDatabase(): Promise<void> {
     if (this.usePostgres && this.prisma) {
       try {
