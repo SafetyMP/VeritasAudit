@@ -1,0 +1,20 @@
+services:
+  fidusgate-db:
+    image: postgres:16-alpine
+    container_name: fidusgate-db
+    ports:
+      - "5439:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fidusgate
+    volumes:
+      - fidusgate-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fidusgate"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  fidusgate-postgres-data:

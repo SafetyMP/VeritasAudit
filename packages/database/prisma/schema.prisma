@@ -52,3 +52,15 @@ model LogEntry {
   message   String
   metadata  Json?
 }
+
+model CommandLog {
+  id            String   @id
+  timestamp     DateTime @default(now())
+  command       String
+  user          String
+  role          String
+  status        String   // 'success' | 'failed'
+  exitCode      Int
+  cedarDecision String   // 'allow' | 'deny'
+}
+

@@ -414,10 +414,49 @@ export class FidusGateDatabase {
   }
 
   public async getCommandLogs(): Promise<CommandLogEntry[]> {
+    if (this.usePostgres && this.prisma) {
+      try {
+        const logs = await this.prisma.commandLog.findMany({
+          orderBy: { timestamp: 'desc' }
+        });
+        return logs.map(l => ({
+          id: l.id,
+          timestamp: l.timestamp.toISOString(),
+          command: l.command,
+          user: l.user,
+          role: l.role,
+          status: l.status as any,
+          exitCode: l.exitCode,
+          cedarDecision: l.cedarDecision as any
+        }));
+      } catch (err: any) {
+        console.warn('⚠️  Prisma CommandLog query failed, falling back to JSON storage:', err.message);
+      }
+    }
     return this.getCommandLogsJson();
   }
 
   public async addCommandLog(logEntry: CommandLogEntry): Promise<void> {
+    if (this.usePostgres && this.prisma) {
+      try {
+        await this.prisma.commandLog.create({
+          data: {
+            id: logEntry.id,
+            timestamp: new Date(logEntry.timestamp),
+            command: logEntry.command,
+            user: logEntry.user,
+            role: logEntry.role,
+            status: logEntry.status,
+            exitCode: logEntry.exitCode,
+            cedarDecision: logEntry.cedarDecision
+          }
+        });
+        return;
+      } catch (err: any) {
+        console.warn('⚠️  Prisma CommandLog insertion failed, falling back to JSON storage:', err.message);
+      }
+    }
+
     const list = this.getCommandLogsJson();
     list.unshift(logEntry);
     writeJsonAtomic(COMMAND_LOGS_FILE, list);
@@ -450,7 +489,8 @@ export class FidusGateDatabase {
           this.prisma.transaction.deleteMany(),
           this.prisma.auditReceipt.deleteMany(),
           this.prisma.securityFinding.deleteMany(),
-          this.prisma.logEntry.deleteMany()
+          this.prisma.logEntry.deleteMany(),
+          this.prisma.commandLog.deleteMany()
         ]);
       } catch (err: any) {
         console.warn('⚠️  Prisma Database clear failed, falling back to JSON storage:', err.message);
