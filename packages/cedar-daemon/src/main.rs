@@ -1,12 +1,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::io::Read;
 use std::time::Instant;
 use tiny_http::{Server, Response, Header, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use cedar_policy::{Authorizer, Context, Entities, PolicySet, Request, Decision, EntityUid};
+use cedar_policy::{Authorizer, Context, Entities, PolicySet, Request, Decision, EntityUid, Schema};
 
 // ==========================================
 // Data Structures for JSON Serialization
@@ -16,6 +15,7 @@ use cedar_policy::{Authorizer, Context, Entities, PolicySet, Request, Decision, 
 struct AuthorizeRequest {
     principal: String,
     action: String,
+    #[allow(dead_code)]
     resource: String,
     context: Option<Value>,
 }
@@ -60,6 +60,23 @@ fn find_policy_file() -> Option<PathBuf> {
     None
 }
 
+fn find_schema_file() -> Option<PathBuf> {
+    let candidates = [
+        "policy.cedarschema",
+        "../policy.cedarschema",
+        "../../policy.cedarschema",
+        "../../../policy.cedarschema",
+        "/app/policy.cedarschema",
+    ];
+    for candidate in &candidates {
+        let path = Path::new(candidate);
+        if path.exists() {
+            return Some(path.to_path_buf());
+        }
+    }
+    None
+}
+
 fn log_info(message: &str) {
     let timestamp = chrono::Utc::now().to_rfc3339();
     println!("[{}] [INFO] {}", timestamp, message);
@@ -82,7 +99,7 @@ fn handle_authorize(
     let auth_req: AuthorizeRequest = serde_json::from_str(req_body)
         .map_err(|e| format!("Failed to parse request body as JSON: {}", e))?;
 
-    // 2. Find and load policy.cedar
+    // 2. Find and load policy.cedar and policy.cedarschema
     let policy_path = find_policy_file()
         .ok_or_else(|| "Could not locate policy.cedar file in candidates paths.".to_string())?;
     
@@ -91,6 +108,15 @@ fn handle_authorize(
 
     let policies = PolicySet::from_str(&policy_src)
         .map_err(|e| format!("Failed to parse Cedar policies: {}", e))?;
+
+    let schema_path = find_schema_file()
+        .ok_or_else(|| "Could not locate policy.cedarschema file in candidates paths.".to_string())?;
+    
+    let schema_src = fs::read_to_string(&schema_path)
+        .map_err(|e| format!("Failed to read schema file: {}", e))?;
+
+    let schema = Schema::from_str(&schema_src)
+        .map_err(|e| format!("Failed to parse Cedar schema: {}", e))?;
 
     // 3. Map principal, action, and resource into Cedar UIDs
     let principal_uid = EntityUid::from_str(&format!("User::\"{}\"", auth_req.principal))
@@ -103,7 +129,7 @@ fn handle_authorize(
         .map_err(|e| format!("Invalid resource format: {}", e))?;
 
     // 4. Extract context variables (path, commandLine)
-    let context_val = auth_req.context.unwrap_or(Value::Null);
+    let context_val = auth_req.context.clone().unwrap_or(Value::Null);
     let path = context_val.get("path")
         .and_then(|v| v.as_str())
         .unwrap_or("");
@@ -130,12 +156,19 @@ fn handle_authorize(
     let entities = Entities::from_json_str(&entities_str, None)
         .map_err(|e| format!("Failed to compile in-memory entity store: {}", e))?;
 
-    // 6. Build the Cedar Request
+    // 6. Build the Cedar Context from incoming payload if present, validating against schema
+    let cedar_context = match auth_req.context {
+        Some(val) => Context::from_json_value(val, Some((&schema, &action_uid)))
+            .map_err(|e| format!("Schema validation failed for context: {}", e))?,
+        None => Context::empty(),
+    };
+
+    // Build the Cedar Request
     let request = Request::new(
         Some(principal_uid),
         Some(action_uid),
         Some(resource_uid),
-        Context::empty(),
+        cedar_context,
         None,
     ).map_err(|e| format!("Failed to create Cedar request: {}", e))?;
 
@@ -187,7 +220,7 @@ fn main() {
         }
     };
 
-    log_info(&format!("VeritasAudit Rust Cedar Policy Daemon successfully listening on http://{}", addr));
+    log_info(&format!("FidusGate Rust Cedar Policy Daemon successfully listening on http://{}", addr));
     log_info("Awaiting authorization payloads...");
 
     let authorizer = Authorizer::new();

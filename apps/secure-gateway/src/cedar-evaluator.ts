@@ -224,9 +224,51 @@ export class CedarEvaluator {
   }
 
   /**
+   * Performs static schema validation on the context payload to match policy.cedarschema.
+   */
+  private validateContextSchema(contextObj?: Record<string, any>): boolean {
+    if (!contextObj) return true;
+
+    // 1. Verify DevOps types
+    if (contextObj.devops) {
+      const d = contextObj.devops;
+      if (typeof d.pipeline_passed !== 'boolean' && d.pipeline_passed !== undefined) return false;
+      if (typeof d.security_audited !== 'boolean' && d.security_audited !== undefined) return false;
+      if (typeof d.ham_drift_checked !== 'boolean' && d.ham_drift_checked !== undefined) return false;
+    }
+
+    // 2. Verify IBP types
+    if (contextObj.ibp) {
+      const i = contextObj.ibp;
+      if (typeof i.cross_functional_synthesized !== 'boolean' && i.cross_functional_synthesized !== undefined) return false;
+      if (typeof i.budget_aligned !== 'boolean' && i.budget_aligned !== undefined) return false;
+    }
+
+    // 3. Verify PLM types
+    if (contextObj.plm) {
+      const p = contextObj.plm;
+      if (typeof p.active_requirement_id !== 'string' && p.active_requirement_id !== null && p.active_requirement_id !== undefined) return false;
+      if (typeof p.associated_tests_written !== 'boolean' && p.associated_tests_written !== undefined) return false;
+      if (typeof p.has_api_drift !== 'boolean' && p.has_api_drift !== undefined) return false;
+      if (typeof p.drift_verified !== 'boolean' && p.drift_verified !== undefined) return false;
+      if (typeof p.release_version_updated !== 'boolean' && p.release_version_updated !== undefined) return false;
+      if (typeof p.changelog_updated !== 'boolean' && p.changelog_updated !== undefined) return false;
+      if (typeof p.has_active_feedback !== 'boolean' && p.has_active_feedback !== undefined) return false;
+      if (typeof p.feedback_aligned !== 'boolean' && p.feedback_aligned !== undefined) return false;
+    }
+
+    return true;
+  }
+
+  /**
    * Evaluates the parsed Cedar policy rules against the incoming request attributes.
    */
   public isAuthorized(principal: string, toolName: string, args: Record<string, any>, contextObj?: Record<string, any>): 'allow' | 'deny' {
+    if (!this.validateContextSchema(contextObj)) {
+      console.warn(`[CedarEvaluator] Context schema validation failed. Rejecting request.`);
+      return 'deny';
+    }
+
     const evalContext = {
       principal,
       resource: {
@@ -322,5 +364,69 @@ export class CedarEvaluator {
    */
   public getRulesCount(): number {
     return this.rules.length;
+  }
+
+  /**
+   * Run detailed simulation with rule matching diagnostics and temporary overrides.
+   */
+  public evaluateSimulator(
+    principal: string,
+    toolName: string,
+    args: Record<string, any>,
+    contextObj?: Record<string, any>
+  ): { decision: 'allow' | 'deny'; matchingPolicies: string[]; reason: string } {
+    if (!this.validateContextSchema(contextObj)) {
+      return {
+        decision: 'deny',
+        matchingPolicies: [],
+        reason: 'Context schema validation failed: Attribute types do not match policy.cedarschema specifications.'
+      };
+    }
+
+    const evalContext = {
+      principal,
+      resource: {
+        tool_name: toolName,
+        args: args || {}
+      },
+      context: contextObj || {}
+    };
+
+    const triggeredPermits: string[] = [];
+    const triggeredForbids: string[] = [];
+
+    for (let idx = 0; idx < this.rules.length; idx++) {
+      const rule = this.rules[idx];
+      try {
+        const result = this.evaluateAST(rule.ast, evalContext);
+        if (result) {
+          const ruleLabel = `Rule #${idx + 1} (${rule.effect.toUpperCase()}): when { ${rule.conditionStr} }`;
+          if (rule.effect === 'forbid') {
+            triggeredForbids.push(ruleLabel);
+          } else {
+            triggeredPermits.push(ruleLabel);
+          }
+        }
+      } catch (err) {}
+    }
+
+    const hasForbid = triggeredForbids.length > 0;
+    const hasPermit = triggeredPermits.length > 0;
+    const decision = (hasPermit && !hasForbid) ? 'allow' : 'deny';
+
+    let reason = '';
+    if (hasForbid) {
+      reason = `Explicitly blocked by: ${triggeredForbids.join(', ')}`;
+    } else if (hasPermit) {
+      reason = `Permitted by: ${triggeredPermits.join(', ')}`;
+    } else {
+      reason = 'Implicitly denied: No matching permit rules were satisfied.';
+    }
+
+    return {
+      decision,
+      matchingPolicies: [...triggeredPermits, ...triggeredForbids],
+      reason
+    };
   }
 }

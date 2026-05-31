@@ -1,4 +1,4 @@
-# Standardized lightweight Veritas Sandbox environment
+# Standardized lightweight FidusGate Sandbox environment
 FROM node:20-alpine
 
 # Install bash and git for full repository auditing compatibility

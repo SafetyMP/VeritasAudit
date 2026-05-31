@@ -1,4 +1,5 @@
 import * as crypto from 'node:crypto';
+import { execSync } from 'node:child_process';
 import { AuditReceipt, AuditReceiptPayload } from '@veritas/core-types';
 
 export interface KeyPair {
@@ -65,47 +66,140 @@ export class LocalKMSProvider implements KMSProvider {
   }
 }
 
-export class RemoteKMSProvider implements KMSProvider {
+// Synchronous curl post helper to handle networked HSM queries
+function curlPost(url: string, headers: Record<string, string>, body: any): any {
+  const curlCmd = `curl -s -X POST "${url}" ` +
+    Object.entries(headers).map(([k, v]) => `-H "${k}: ${v}"`).join(' ') +
+    ` -d '${JSON.stringify(body).replace(/'/g, "'\\''")}'`;
+  const output = execSync(curlCmd, { encoding: 'utf8' });
+  return JSON.parse(output);
+}
+
+export class VaultKMSProvider implements KMSProvider {
   public signPayload(
     payload: AuditReceiptPayload,
     privateKeyHex: string,
     kid: string
   ): AuditReceipt {
-    const keyId = process.env.KMS_KEY_ID || 'hsm-default-key-id';
-    console.log(`🔐 KMS API CALL: Dispatching remote HSM signing request to key ID: ${keyId}`);
+    const vaultAddr = process.env.VAULT_ADDR || 'http://127.0.0.1:8200';
+    const vaultToken = process.env.VAULT_TOKEN || 'root';
+    const keyId = process.env.KMS_KEY_ID || 'fidusgate-key';
+
+    console.log(`🔐 KMS API CALL: Dispatching remote Vault HSM signing request to key: ${keyId}`);
     
-    // Simulate HSM cryptographic hash signature generation
-    const mockSig = crypto
-      .createHash('sha256')
-      .update(JSON.stringify(payload) + privateKeyHex + keyId)
-      .digest('hex');
+    try {
+      const inputBase64 = Buffer.from(JSON.stringify(payload)).toString('base64');
+      const url = `${vaultAddr}/v1/transit/sign/${keyId}`;
+      const response = curlPost(
+        url,
+        { 'X-Vault-Token': vaultToken, 'Content-Type': 'application/json' },
+        { input: inputBase64 }
+      );
       
-    return {
-      payload,
-      signature: {
-        alg: 'EdDSA',
-        kid,
-        sig: mockSig
+      const sig = response?.data?.signature;
+      if (!sig) {
+        throw new Error(response?.errors ? JSON.stringify(response.errors) : 'No signature returned from Vault');
       }
-    };
+
+      return {
+        payload,
+        signature: {
+          alg: 'EdDSA',
+          kid,
+          sig
+        }
+      };
+    } catch (err: any) {
+      console.warn(`⚠️ Vault Transit sign failed: ${err.message}. Falling back to local HSM keys.`);
+      const local = new LocalKMSProvider();
+      return local.signPayload(payload, privateKeyHex, kid);
+    }
   }
 
   public verifyReceipt(receipt: AuditReceipt, publicKeyHex: string): boolean {
-    const vaultAddr = process.env.VAULT_ADDR || 'vault.veritas.internal';
-    console.log(`📡 KMS API CALL: Dispatching remote signature verification to Vault endpoint: ${vaultAddr}`);
-    
-    // Validate signature authenticity (accept local test signatures and valid hex hashes)
-    const isMockHash = receipt.signature.sig.length === 64;
-    const localProvider = new LocalKMSProvider();
-    
-    return isMockHash || localProvider.verifyReceipt(receipt, publicKeyHex);
+    const vaultAddr = process.env.VAULT_ADDR || 'http://127.0.0.1:8200';
+    const vaultToken = process.env.VAULT_TOKEN || 'root';
+    const keyId = process.env.KMS_KEY_ID || 'fidusgate-key';
+
+    console.log(`📡 KMS API CALL: Dispatching Vault verification to: ${vaultAddr}`);
+
+    try {
+      const inputBase64 = Buffer.from(JSON.stringify(receipt.payload)).toString('base64');
+      const url = `${vaultAddr}/v1/transit/verify/${keyId}`;
+      const response = curlPost(
+        url,
+        { 'X-Vault-Token': vaultToken, 'Content-Type': 'application/json' },
+        { input: inputBase64, signature: receipt.signature.sig }
+      );
+
+      return !!response?.data?.valid;
+    } catch (err: any) {
+      console.warn(`⚠️ Vault verification failed: ${err.message}. Falling back to local offline check.`);
+      const local = new LocalKMSProvider();
+      return local.verifyReceipt(receipt, publicKeyHex);
+    }
+  }
+}
+
+export class GcpKMSProvider implements KMSProvider {
+  public signPayload(
+    payload: AuditReceiptPayload,
+    privateKeyHex: string,
+    kid: string
+  ): AuditReceipt {
+    const projectId = process.env.GCP_PROJECT_ID || 'fidusgate-audit';
+    const location = process.env.GCP_LOCATION || 'global';
+    const keyRing = process.env.GCP_KMS_KEY_RING || 'fidusgate-keyring';
+    const cryptoKey = process.env.GCP_KMS_KEY_NAME || 'fidusgate-key';
+    const version = process.env.GCP_KMS_KEY_VERSION || '1';
+    const accessToken = process.env.GCP_ACCESS_TOKEN || 'mock-access-token';
+
+    console.log(`🔐 KMS API CALL: Dispatching Google Cloud KMS signing request to key: ${cryptoKey}`);
+
+    try {
+      const dataStr = JSON.stringify(payload);
+      const sha256Base64 = crypto.createHash('sha256').update(dataStr).digest('base64');
+
+      const url = `https://cloudkms.googleapis.com/v1/projects/${projectId}/locations/${location}/keyRings/${keyRing}/cryptoKeys/${cryptoKey}/cryptoKeyVersions/${version}:asymmetricSign`;
+      const response = curlPost(
+        url,
+        { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        { digest: { sha256: sha256Base64 } }
+      );
+
+      const sig = response?.signature;
+      if (!sig) {
+        throw new Error(response?.error?.message || 'No signature returned from GCP KMS');
+      }
+
+      return {
+        payload,
+        signature: {
+          alg: 'EdDSA',
+          kid,
+          sig
+        }
+      };
+    } catch (err: any) {
+      console.warn(`⚠️ GCP KMS sign failed: ${err.message}. Falling back to local keys.`);
+      const local = new LocalKMSProvider();
+      return local.signPayload(payload, privateKeyHex, kid);
+    }
+  }
+
+  public verifyReceipt(receipt: AuditReceipt, publicKeyHex: string): boolean {
+    const local = new LocalKMSProvider();
+    return local.verifyReceipt(receipt, publicKeyHex);
   }
 }
 
 // Dynamically resolve provider based on environment configurations
 function getKMSProvider(): KMSProvider {
-  if (process.env.KMS_KEY_ID || process.env.VAULT_ADDR) {
-    return new RemoteKMSProvider();
+  if (process.env.GCP_KMS_KEY_RING || process.env.GCP_KMS_KEY_NAME) {
+    return new GcpKMSProvider();
+  }
+  if (process.env.VAULT_ADDR || process.env.VAULT_TOKEN || process.env.KMS_KEY_ID) {
+    return new VaultKMSProvider();
   }
   return new LocalKMSProvider();
 }
@@ -194,7 +288,7 @@ function handleCli() {
     console.log('--------------------------------------------------');
     process.exit(0);
   } else {
-    console.log('📖 VeritasAudit Cryptographic Utility CLI');
+    console.log('📖 FidusGate Cryptographic Utility CLI');
     console.log('Usage:');
     console.log('  node packages/crypto-utils/dist/index.js --verify <path_to_receipt_json> [--key <public_key_hex>]');
     console.log('  node packages/crypto-utils/dist/index.js --generate-keys');

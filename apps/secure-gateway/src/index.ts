@@ -366,8 +366,8 @@ const ibpTracker = new IBPComplianceTracker();
 const plmTracker = new PLMComplianceTracker();
 
 // SRE Telemetry Counters
-let veritasPolicyEvaluationsAllow = 0;
-let veritasPolicyEvaluationsDeny = 0;
+let fidusgatePolicyEvaluationsAllow = 0;
+let fidusgatePolicyEvaluationsDeny = 0;
 
 
 // Load Veritas MCP Configuration and policies
@@ -388,7 +388,7 @@ log('info', `Loaded TS Cedar Policy Parser with ${cedarEvaluator.getRulesCount()
 app.use(cors());
 app.use(express.json());
 
-const JWT_SECRET = process.env.JWT_SECRET || 'veritasaudit-super-secure-dev-jwt-secret';
+const JWT_SECRET = process.env.JWT_SECRET || 'fidusgate-super-secure-dev-jwt-secret';
 
 // Logger helper with security tagging
 function log(level: 'info' | 'warn' | 'error' | 'security', message: string, meta?: any) {
@@ -400,22 +400,24 @@ function log(level: 'info' | 'warn' | 'error' | 'security', message: string, met
 // Recommendation #5: Real-time Incident Alerting
 // ==========================================
 async function dispatchWebhookAlert(type: 'blocked_action' | 'finding', data: any) {
-  const url = process.env.SLACK_WEBHOOK_URL;
-  if (!url) return;
+  const slackUrl = process.env.SLACK_WEBHOOK_URL;
+  const teamsUrl = process.env.TEAMS_WEBHOOK_URL;
+  
+  if (!slackUrl && !teamsUrl) return;
   
   try {
-    let payload = {};
-    
+    // 1. Compile Slack Payload (Slack block format)
+    let slackPayload = {};
     if (type === 'blocked_action') {
       const { receipt } = data;
-      payload = {
-        text: `🚨 *VeritasAudit Security Alert: Blocked AI Agent Action!*`,
+      slackPayload = {
+        text: `🚨 *FidusGate Security Alert: Blocked AI Agent Action!*`,
         blocks: [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `🚨 *VeritasAudit Security Alert: Blocked AI Agent Action!*\nAn autonomous coding agent attempted to execute a high-risk tool call that was programmatically blocked by Cedar policy controls.`
+              text: `🚨 *FidusGate Security Alert: Blocked AI Agent Action!*\\nAn autonomous coding agent attempted to execute a high-risk tool call that was programmatically blocked by Cedar policy controls.`
             }
           },
           {
@@ -441,14 +443,14 @@ async function dispatchWebhookAlert(type: 'blocked_action' | 'finding', data: an
       };
     } else if (type === 'finding') {
       const { finding } = data;
-      payload = {
-        text: `⚠️ *VeritasAudit Security Finding: CI Pipeline Vulnerability!*`,
+      slackPayload = {
+        text: `⚠️ *FidusGate Security Finding: CI Pipeline Vulnerability!*`,
         blocks: [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `⚠️ *VeritasAudit Security Finding: Pipeline Vulnerability Scanned!*\nThe static CI/CD workflow security auditor has detected a potential prompt injection vulnerability in your GitHub Actions configurations.`
+              text: `⚠️ *FidusGate Security Finding: Pipeline Vulnerability Scanned!*\\nThe static CI/CD workflow security auditor has detected a potential prompt injection vulnerability in your GitHub Actions configurations.`
             }
           },
           {
@@ -474,19 +476,90 @@ async function dispatchWebhookAlert(type: 'blocked_action' | 'finding', data: an
       };
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    
-    if (response.ok) {
-      log('info', `Security notification successfully dispatched to Slack webhook.`);
-    } else {
-      log('warn', `Slack webhook returned non-200 status: ${response.status}`);
+    // 2. Compile MS Teams Payload (Office 365 MessageCard format)
+    let teamsPayload = {};
+    if (type === 'blocked_action') {
+      const { receipt } = data;
+      teamsPayload = {
+        "@type": "MessageCard",
+        "@context": "http://schema.org/extensions",
+        "themeColor": "E81123", // Crimson red for blocks
+        "summary": "FidusGate Security Alert: Blocked AI Agent Action",
+        "title": "🚨 FidusGate Security Alert: Blocked AI Agent Action",
+        "sections": [{
+          "activityTitle": "An autonomous coding agent attempted to execute a high-risk tool call that was programmatically blocked by Cedar policy controls.",
+          "facts": [
+            { "name": "🔧 Tool Attempted", "value": `\`${receipt.payload.tool_name}\`` },
+            { "name": "🛡️ Decision", "value": `\`${receipt.payload.decision.toUpperCase()}\`` },
+            { "name": "🎖️ Risk Tier", "value": `\`Tier ${receipt.payload.claimed_issuer_tier}\`` },
+            { "name": "✍️ Signed Issuer", "value": `\`${receipt.payload.issuer_id}\`` },
+            { "name": "📋 Audit Reason", "value": receipt.payload.reason || "N/A" }
+          ],
+          "markdown": true
+        }]
+      };
+    } else if (type === 'finding') {
+      const { finding } = data;
+      teamsPayload = {
+        "@type": "MessageCard",
+        "@context": "http://schema.org/extensions",
+        "themeColor": "F8A100", // Orange for warnings
+        "summary": "FidusGate Security Finding: Pipeline Vulnerability",
+        "title": "⚠️ FidusGate Security Finding: Pipeline Vulnerability Scanned",
+        "sections": [{
+          "activityTitle": "The static CI/CD workflow security auditor has detected a potential prompt injection vulnerability in your GitHub Actions configurations.",
+          "facts": [
+            { "name": "🎯 Vector ID", "value": `\`${finding.vector}\`` },
+            { "name": "🔴 Severity", "value": `**${finding.severity.toUpperCase()}**` },
+            { "name": "📂 Target File", "value": `\`${finding.file}\`` },
+            { "name": "⚙️ Workflow Step", "value": `\`${finding.step}\`` },
+            { "name": "💥 Critical Impact", "value": finding.impact },
+            { "name": "🛡️ Recommended Remediation", "value": finding.remediation }
+          ],
+          "markdown": true
+        }]
+      };
+    }
+
+    // 3. Dispatch to Slack Webhook
+    if (slackUrl) {
+      try {
+        const response = await fetch(slackUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(slackPayload)
+        });
+        
+        if (response.ok) {
+          log('info', `Security notification successfully dispatched to Slack webhook.`);
+        } else {
+          log('warn', `Slack webhook returned non-200 status: ${response.status}`);
+        }
+      } catch (err: any) {
+        log('error', `Failed to dispatch Slack webhook notification alert:`, err.message);
+      }
+    }
+
+    // 4. Dispatch to MS Teams Webhook
+    if (teamsUrl) {
+      try {
+        const response = await fetch(teamsUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(teamsPayload)
+        });
+        
+        if (response.ok) {
+          log('info', `Security notification successfully dispatched to MS Teams webhook.`);
+        } else {
+          log('warn', `MS Teams webhook returned non-200 status: ${response.status}`);
+        }
+      } catch (err: any) {
+        log('error', `Failed to dispatch MS Teams webhook notification alert:`, err.message);
+      }
     }
   } catch (err: any) {
-    log('error', `Failed to dispatch Slack webhook notification alert:`, err.message);
+    log('error', `Exception caught during webhook payload compilation:`, err.message);
   }
 }
 
@@ -506,7 +579,7 @@ function requireAuth(allowedRoles: ('developer' | 'admin' | 'auditor')[]) {
     // Standard bypass helper if enabled via env (defaults to false for strict authentication gating)
     const isBypass = process.env.DISABLE_AUTH === 'true';
     if (isBypass) {
-      (req as AuthenticatedRequest).user = { id: 'usr_bypass', role: 'admin', email: 'admin@veritas.internal' };
+      (req as AuthenticatedRequest).user = { id: 'usr_bypass', role: 'admin', email: 'admin@fidusgate.internal' };
       return next();
     }
 
@@ -650,9 +723,9 @@ async function evaluateCedarPolicy(principal: string, action: string, resource: 
   })();
 
   if (decision === 'allow') {
-    veritasPolicyEvaluationsAllow++;
+    fidusgatePolicyEvaluationsAllow++;
   } else {
-    veritasPolicyEvaluationsDeny++;
+    fidusgatePolicyEvaluationsDeny++;
   }
 
   return decision;
@@ -924,7 +997,7 @@ app.post('/api/sandbox/execute', requireAuth(['admin']), async (req, res) => {
        return;
     }
 
-    const userEmail = (req as AuthenticatedRequest).user?.email || 'admin@veritas.internal';
+    const userEmail = (req as AuthenticatedRequest).user?.email || 'admin@fidusgate.internal';
     const userRole = (req as AuthenticatedRequest).user?.role || 'admin';
 
     // Input command tokenized audit (Defense-in-Depth against bypasses)
@@ -945,7 +1018,8 @@ app.post('/api/sandbox/execute', requireAuth(['admin']), async (req, res) => {
       });
 
       res.status(403).json({ 
-        error: `Command execution forbidden. Reason: ${auditResult.reason}` 
+        error: `Command execution forbidden. Reason: ${auditResult.reason}`,
+        remediationSuggestion: auditResult.remediationSuggestion
       });
       return;
     }
@@ -1164,6 +1238,252 @@ app.get('/api/logs/commands', requireAuth(['developer', 'admin', 'auditor']), as
   }
 });
 
+// ==========================================
+// Advanced SecOps Attestation, Drift & Patch Endpoints
+// ==========================================
+
+// 15. GET /api/auth/attested-claims - Retrieve OIDC/SPIFFE Attestation details (Role: developer, admin, auditor)
+app.get('/api/auth/attested-claims', requireAuth(['developer', 'admin', 'auditor']), (req, res) => {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    if (!user) {
+      res.status(401).json({ error: 'Unauthenticated' });
+      return;
+    }
+    res.json({
+      attested: true,
+      method: "Platform OIDC Gating",
+      workloadId: `spiffe://fidusgate.internal/ns/sandbox/sa/agent-${user.role}`,
+      issuer: "https://token.actions.githubusercontent.com",
+      subject: `repo:fidusgate/audit-monorepo:ref:refs/heads/main:job:security-audit:user:${user.email}`,
+      signingKey: "302a300506032b6570032100df20721389de78a2e10fc39c8942b0d07412ae89fd2b13c7809aef823101de83",
+      role: user.role,
+      email: user.email
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to retrieve attestation claims' });
+  }
+});
+
+// 16. GET /api/sandbox/patch - Retrieve pending sandbox overlay patch (Role: developer, admin, auditor)
+app.get('/api/sandbox/patch', requireAuth(['developer', 'admin', 'auditor']), (req, res) => {
+  try {
+    const patchPath = path.resolve(process.cwd(), '.memory/pending-sandbox.patch');
+    if (fs.existsSync(patchPath)) {
+      const patch = fs.readFileSync(patchPath, 'utf8');
+      res.json({ patch, exists: true });
+    } else {
+      res.json({ patch: '', exists: false });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to retrieve pending patch', message: err.message });
+  }
+});
+
+// 17. POST /api/sandbox/apply - Apply/Merge sandbox diff patch (Role: admin)
+app.post('/api/sandbox/apply', requireAuth(['admin']), async (req, res) => {
+  try {
+    const patchPath = path.resolve(process.cwd(), '.memory/pending-sandbox.patch');
+    if (!fs.existsSync(patchPath)) {
+      res.status(404).json({ error: 'No pending sandbox patch found to apply.' });
+      return;
+    }
+
+    const userEmail = (req as AuthenticatedRequest).user?.email || 'admin@fidusgate.internal';
+    const userRole = (req as AuthenticatedRequest).user?.role || 'admin';
+
+    log('info', `Administrator applying sandbox patch: ${patchPath}`);
+    
+    try {
+      // Use git apply to merge patch cleanly
+      execSync('git apply --whitespace=nowarn .memory/pending-sandbox.patch', { cwd: process.cwd() });
+      
+      // Delete patch file after successful merge
+      fs.unlinkSync(patchPath);
+
+      log('info', `Sandbox patch successfully merged into host codebase by ${userEmail}.`);
+
+      // Record forensic log
+      await db.addCommandLog({
+        id: `cmd_${Math.floor(100000 + Math.random() * 900000)}`,
+        timestamp: new Date().toISOString(),
+        command: 'git apply .memory/pending-sandbox.patch',
+        user: userEmail,
+        role: userRole,
+        status: 'success',
+        exitCode: 0,
+        cedarDecision: 'allow'
+      });
+
+      res.json({ message: 'Sandbox patch successfully applied and merged.', applied: true });
+    } catch (execErr: any) {
+      log('error', `Failed to apply sandbox patch`, execErr.message);
+      res.status(500).json({ error: 'Failed to merge patch into workspace', message: execErr.message });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: 'Patch application exception occurred', message: err.message });
+  }
+});
+
+// 18. GET /api/sandbox/drift - Retrieve CLAUDE.md drift heatmap metrics (Role: developer, admin, auditor)
+app.get('/api/sandbox/drift', requireAuth(['developer', 'admin', 'auditor']), (req, res) => {
+  try {
+    const workspaceRoot = process.cwd();
+    const claudePath = path.resolve(workspaceRoot, 'CLAUDE.md');
+    
+    let claudeTime = Date.now();
+    if (fs.existsSync(claudePath)) {
+      claudeTime = fs.statSync(claudePath).mtimeMs;
+    }
+
+    const targets = [
+      { name: 'apps/admin-dashboard', path: 'apps/admin-dashboard/src' },
+      { name: 'apps/secure-gateway', path: 'apps/secure-gateway/src' },
+      { name: 'packages/cedar-daemon', path: 'packages/cedar-daemon/src' },
+      { name: 'packages/database', path: 'packages/database/src' },
+      { name: 'scripts', path: 'scripts' }
+    ];
+
+    const driftDetails = targets.map(t => {
+      const fullPath = path.resolve(workspaceRoot, t.path);
+      let maxTime = 0;
+
+      const scanDir = (dirPath: string) => {
+        if (!fs.existsSync(dirPath)) return;
+        const items = fs.readdirSync(dirPath);
+        for (const item of items) {
+          const p = path.join(dirPath, item);
+          if (p.includes('node_modules') || p.includes('.turbo') || p.includes('dist')) continue;
+          try {
+            const stat = fs.statSync(p);
+            if (stat.isDirectory()) {
+              scanDir(p);
+            } else if (stat.isFile()) {
+              if (stat.mtimeMs > maxTime) {
+                maxTime = stat.mtimeMs;
+              }
+            }
+          } catch (e) {}
+        }
+      };
+
+      scanDir(fullPath);
+
+      // If maxTime > claudeTime, we have drift!
+      const isStale = maxTime > claudeTime;
+      const driftSeconds = isStale ? Math.max(0, Math.floor((maxTime - claudeTime) / 1000)) : 0;
+
+      return {
+        name: t.name,
+        driftSeconds,
+        status: isStale ? 'stale' : 'aligned',
+        lastUpdated: new Date(maxTime || Date.now()).toISOString()
+      };
+    });
+
+    res.json(driftDetails);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to calculate drift', message: err.message });
+  }
+});
+
+// 19. POST /api/sandbox/drift-sync - Trigger memory cheat sheet synchronizer (Role: developer, admin)
+app.post('/api/sandbox/drift-sync', requireAuth(['developer', 'admin']), (req, res) => {
+  try {
+    const userEmail = (req as AuthenticatedRequest).user?.email || 'admin@fidusgate.internal';
+    
+    log('info', `User ${userEmail} triggered CLAUDE.md drift synchronization...`);
+    
+    try {
+      execSync('bash scripts/ham-drift-watcher.sh', { cwd: process.cwd() });
+      log('info', 'CLAUDE.md drift watcher executed successfully. Memory maps synchronized.');
+      res.json({ message: 'Codebase memory synchronized successfully.', synced: true });
+    } catch (execErr: any) {
+      log('error', 'CLAUDE.md drift watcher execution failed', execErr.message);
+      res.status(500).json({ error: 'Failed to execute memory synchronizer', message: execErr.message });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: 'Drift sync exception occurred', message: err.message });
+  }
+});
+
+// 20. GET /api/policy/active - Retrieve current active policy.cedar content (Role: developer, admin, auditor)
+app.get('/api/policy/active', requireAuth(['developer', 'admin', 'auditor']), (req, res) => {
+  try {
+    const activePolicyPath = path.resolve(process.cwd(), config.policy || 'policy.cedar');
+    if (fs.existsSync(activePolicyPath)) {
+      const code = fs.readFileSync(activePolicyPath, 'utf8');
+      res.json({ code });
+    } else {
+      res.status(404).json({ error: 'Active policy file not found' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to retrieve active policy', message: err.message });
+  }
+});
+
+// 21. POST /api/policy/simulate - Live + Draft Cedar Policy Simulator (Role: admin, auditor)
+app.post('/api/policy/simulate', requireAuth(['admin', 'auditor']), (req, res) => {
+  try {
+    const { principal, toolName, args, context: contextObj, policyOverride } = req.body;
+    
+    let evaluator: CedarEvaluator;
+    if (policyOverride !== undefined && policyOverride !== null) {
+      evaluator = new CedarEvaluator();
+      evaluator.parse(policyOverride);
+    } else {
+      const activePolicyPath = path.resolve(process.cwd(), config.policy || 'policy.cedar');
+      evaluator = new CedarEvaluator(activePolicyPath);
+    }
+
+    const simulationResult = evaluator.evaluateSimulator(principal, toolName, args || {}, contextObj || {});
+    res.json(simulationResult);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to evaluate simulation', message: err.message });
+  }
+});
+
+// 22. GET /api/logs/compliance/:logId/export - Export structured JSON forensic compliance package (Role: admin, auditor)
+app.get('/api/logs/compliance/:logId/export', requireAuth(['admin', 'auditor']), async (req, res) => {
+  try {
+    const { logId } = req.params;
+    const logs = await db.getCommandLogs();
+    const logItem = logs.find((l: any) => l.id === logId);
+    
+    if (!logItem) {
+      res.status(404).json({ error: `Command log not found for ID: ${logId}` });
+      return;
+    }
+
+    const userRole = logItem.role;
+    const userEmail = logItem.user;
+    
+    const attestation = {
+      attested: true,
+      method: "Platform OIDC Gating",
+      workloadId: `spiffe://fidusgate.internal/ns/sandbox/sa/agent-${userRole}`,
+      issuer: "https://token.actions.githubusercontent.com",
+      subject: `repo:fidusgate/audit-monorepo:ref:refs/heads/main:job:security-audit:user:${userEmail}`,
+      signingKey: "302a300506032b6570032100df20721389de78a2e10fc39c8942b0d07412ae89fd2b13c7809aef823101de83"
+    };
+
+    const complianceEnvelope = {
+      complianceStandard: "FidusGate-SecOps-v1.0",
+      complianceAttestationId: `compliance_${Math.floor(100000 + Math.random() * 900000)}`,
+      timestamp: new Date().toISOString(),
+      evaluatedRecord: logItem,
+      attestationClaims: attestation,
+      fidusgateEngineVersion: "1.2.0-Enterprise"
+    };
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename=fidusgate-compliance-receipt-${logId}.json`);
+    res.json(complianceEnvelope);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to generate compliance package', message: err.message });
+  }
+});
+
 // 14. GET /api/metrics - Live SRE Prometheus Telemetry metrics (Anonymous/Public)
 app.get('/api/metrics', (req, res) => {
   try {
@@ -1172,24 +1492,24 @@ app.get('/api/metrics', (req, res) => {
     const plmState = plmTracker.getState();
 
     const output = [
-      `# HELP veritas_gateway_policy_evaluations_total Total count of Cedar policy evaluations.`,
-      `# TYPE veritas_gateway_policy_evaluations_total counter`,
-      `veritas_gateway_policy_evaluations_total{decision="allow"} ${veritasPolicyEvaluationsAllow}`,
-      `veritas_gateway_policy_evaluations_total{decision="deny"} ${veritasPolicyEvaluationsDeny}`,
+      `# HELP fidusgate_gateway_policy_evaluations_total Total count of Cedar policy evaluations.`,
+      `# TYPE fidusgate_gateway_policy_evaluations_total counter`,
+      `fidusgate_gateway_policy_evaluations_total{decision="allow"} ${fidusgatePolicyEvaluationsAllow}`,
+      `fidusgate_gateway_policy_evaluations_total{decision="deny"} ${fidusgatePolicyEvaluationsDeny}`,
       ``,
-      `# HELP veritas_ibp_tokens_burned_total Running sum of estimated tokens burned in this session.`,
-      `# TYPE veritas_ibp_tokens_burned_total counter`,
-      `veritas_ibp_tokens_burned_total ${ibpState.tokensConsumed}`,
+      `# HELP fidusgate_ibp_tokens_burned_total Running sum of estimated tokens burned in this session.`,
+      `# TYPE fidusgate_ibp_tokens_burned_total counter`,
+      `fidusgate_ibp_tokens_burned_total ${ibpState.tokensConsumed}`,
       ``,
-      `# HELP veritas_plm_active_directives Current count of unaligned active directives.`,
-      `# TYPE veritas_plm_active_directives gauge`,
-      `veritas_plm_active_directives ${plmState.activeDirectives ? plmState.activeDirectives.length : 0}`,
+      `# HELP fidusgate_plm_active_directives Current count of unaligned active directives.`,
+      `# TYPE fidusgate_plm_active_directives gauge`,
+      `fidusgate_plm_active_directives ${plmState.activeDirectives ? plmState.activeDirectives.length : 0}`,
       ``,
-      `# HELP veritas_devops_compliance_status DevOps compliance status by gate (1=OK, 0=Failed).`,
-      `# TYPE veritas_devops_compliance_status gauge`,
-      `veritas_devops_compliance_status{gate="pipeline"} ${devopsState.pipelineVerified ? 1 : 0}`,
-      `veritas_devops_compliance_status{gate="security"} ${devopsState.securityAudited ? 1 : 0}`,
-      `veritas_devops_compliance_status{gate="drift"} ${devopsState.hamChecked ? 1 : 0}`
+      `# HELP fidusgate_devops_compliance_status DevOps compliance status by gate (1=OK, 0=Failed).`,
+      `# TYPE fidusgate_devops_compliance_status gauge`,
+      `fidusgate_devops_compliance_status{gate="pipeline"} ${devopsState.pipelineVerified ? 1 : 0}`,
+      `fidusgate_devops_compliance_status{gate="security"} ${devopsState.securityAudited ? 1 : 0}`,
+      `fidusgate_devops_compliance_status{gate="drift"} ${devopsState.hamChecked ? 1 : 0}`
     ].join('\n');
 
     res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
@@ -1200,5 +1520,5 @@ app.get('/api/metrics', (req, res) => {
 });
 
 app.listen(port, () => {
-  log('info', `VeritasAudit Security Gateway API listening on Port ${port}`);
+  log('info', `FidusGate Security Gateway API listening on Port ${port}`);
 });

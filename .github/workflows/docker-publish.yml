@@ -10,8 +10,8 @@ on:
 env:
   REGISTRY: ghcr.io
   # Package namespace targets
-  IMAGE_GATEWAY: ${{ github.repository_owner }}/veritasaudit-gateway
-  IMAGE_DASHBOARD: ${{ github.repository_owner }}/veritasaudit-dashboard
+  IMAGE_GATEWAY: ${{ github.repository_owner }}/fidusgate-gateway
+  IMAGE_DASHBOARD: ${{ github.repository_owner }}/fidusgate-dashboard
 
 jobs:
   build-and-push:

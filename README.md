@@ -1,16 +1,16 @@
-# ⚖️ VeritasAudit
+# ⚖️ FidusGate
 
 ### Cryptographically Verified, Self-Governing AI DevSecOps Governance Platform
 
-VeritasAudit is an enterprise-grade, zero-trust repository governance and runtime verification framework specifically engineered for **Autonomous AI-Agent Operations**. It shifts security left, enforcing real-time programmatic access controls, deterministic signature verification, and automated static security analysis on agentic workflows.
+FidusGate is an enterprise-grade, zero-trust repository repository governance and runtime verification framework specifically engineered for **Autonomous AI-Agent Operations**. It shifts security left, enforcing real-time programmatic access controls, deterministic signature verification, and automated static security analysis on agentic workflows.
 
-Designed with a **risk-centric architecture**, VeritasAudit establishes mathematically verifiable boundaries around AI tool execution, preventing unauthorized environment modifications, privilege escalation, and prompt-injection-driven system compromise.
+Designed with a **risk-centric architecture**, FidusGate establishes mathematically verifiable boundaries around AI tool execution, preventing unauthorized environment modifications, privilege escalation, and prompt-injection-driven system compromise.
 
 ---
 
 ## 🏛️ Regulatory & Risk Control Alignment
 
-VeritasAudit is modeled to align with international risk management and cybersecurity controls (e.g., **NIST SP 800-53, ISO/IEC 27001, SOC 2 Common Criteria**), translating corporate compliance structures into deterministic code policies:
+FidusGate is modeled to align with international risk management and cybersecurity controls (e.g., **NIST SP 800-53, ISO/IEC 27001, SOC 2 Common Criteria**), translating corporate compliance structures into deterministic code policies:
 
 *   **Separation of Duties (SoD):** Programmatically separates code compilation, infrastructure modification, and security policy modifications. AI agents are locked out of modifying policy boundaries (`policy.cedar`) or core scripts (`scripts/*`) directly.
 *   **Auditability & Non-Repudiation:** Generates cryptographically signed **Ed25519 receipts** for all gateway transactions, establishing an immutable, verifiable ledger of agent actions.
@@ -81,7 +81,7 @@ graph TD
 
 ## 🔒 The Risk-Tiered Governance Framework
 
-VeritasAudit establishes a four-tier risk classification for tools available to autonomous agents. These categories map directly to Cedar access-control policies parsed at the gateway:
+FidusGate establishes a four-tier risk classification for tools available to autonomous agents. These categories map directly to Cedar access-control policies parsed at the gateway:
 
 | Risk Tier | Scope of Actions | Cedar Permission Rule | Enforcement Strategy |
 | :--- | :--- | :--- | :--- |
@@ -108,6 +108,33 @@ All workflows have been hardened by default:
 *   Pristined agent runtime settings to use a strict `"sandbox": "workspace-read"` context with zero execution capabilities.
 
 ---
+
+## 💎 Premium Enterprise Feature Suites
+
+FidusGate includes a robust, high-performance suite of SecOps observability and simulation tools fully integrated into the Operations Dashboard:
+
+### 🧬 1. Live + Draft Cedar Policy Simulator
+* **Interactive dry-runs:** Toggles the simulator to `"Enable Custom Draft Policy Overlay (In-Memory Dry Run)"`. This mounts a high-performance in-memory text editor containing your active Cedar authorization code.
+* **Typographical diagnostics:** Write new rules or modify existing entries in real-time, instantly evaluating simulated agent actions (e.g. `sb:issuer:agent-80` calling `write_file`) against your draft policy.
+* **AST evaluation logs:** Returns dynamic permission statuses (`ALLOW` in neon green or `DENY` in glowing ruby) accompanied by the exact matching line rules from the AST engine.
+* **Production safety:** All custom draft changes are kept strictly in-memory, ensuring production policies remain isolated and untouched until formally approved.
+
+### 💼 2. Forensic JSON Compliance Package Exporter
+* **Tamper-proof receipts:** The Forensic Command Timeline shows all audited commands executed inside our gVisor microVM shell.
+* **Unified package format:** Click **"Download Forensic Compliance Receipt"** on any timeline entry to compile sandboxed logs, SPIFFE workloads, OIDC attestation claims, and cryptographic signatures into a structured JSON envelope.
+* **Role-based security:** Gated so only authenticated roles of `admin` or `auditor` can pull forensic details, preventing credential harvesting.
+
+### 🤖 3. AI-Agent Auto-Remediation Suggestions
+* **Corrective guidance:** When the Command Auditor intercepts a blocked/forbidden command (e.g. a developer trying to run `curl http://...`), it dynamically returns a tailored remediation suggestion (e.g. *Suggesting safe mirrors or local cache stores*).
+* **Self-Refactoring SDLC:** These corrective suggestion hooks are packed inside `/api/sandbox/execute` responses, allowing automated coding tools to self-correct and learn security requirements autonomously.
+
+### 📐 4. Polished Collapsible Server Architecture Guide
+* **Native Flow Integration:** Designed in response to user feedback, the interactive guide is integrated as a dedicated, space-obsidian glassmorphic accordion section positioned naturally right before the terminal console.
+* **Smooth Micro-Animations:** A clickable header toggle slides the guide body open or closed with smooth CSS slide-down animations and updates a reactive chevron indicator.
+* **Component Profiling:** SecOps administrators can interactively select component cards (Secure Gateway, Operations Console, Rust Cedar Daemon, Cryptographic Utilities, Database Clients, Core Types, and Sandbox execution layers) to instantly view their **Purpose & Security Value**, **Operational Runbook instructions (ports, triggers, scripts)**, and **Key Capabilities & Functions**.
+
+---
+
 
 ## ⚙️ Quick Start & Execution Guide
 
@@ -151,7 +178,7 @@ node packages/crypto-utils/dist/index.js --verify <path_to_receipt_json>
 
 ## 🔬 Enterprise Production & Hardening Guide
 
-While VeritasAudit is designed to scaffold zero-trust structures with local configurations for development, transitioning to a highly available enterprise-grade production environment requires upgrading the following layers:
+While FidusGate is designed to scaffold zero-trust structures with local configurations for development, transitioning to a highly available enterprise-grade production environment requires upgrading the following layers:
 
 ### 1. Database Architecture & Persistence Strategy
 * **Current Setup**: By default, `@veritas/database` operates in a zero-dependency local JSON file store mode. However, a fully relational database capability is already integrated using the **Prisma ORM**.

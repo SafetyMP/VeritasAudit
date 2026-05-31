@@ -12,6 +12,26 @@ export default function App() {
   
   // PLM Feedback & Gate Alignment States
   const [plmState, setPlmState] = useState<any>(null);
+  const [ibpState, setIbpState] = useState<any>(null);
+  const [attestedClaims, setAttestedClaims] = useState<any>(null);
+  const [pendingPatch, setPendingPatch] = useState<any>(null);
+  const [driftState, setDriftState] = useState<any[]>([]);
+  const [driftSyncLoading, setDriftSyncLoading] = useState(false);
+  const [patchApplyLoading, setPatchApplyLoading] = useState(false);
+
+  // Enterprise Simulator & Timeline States
+  const [activePolicyCode, setActivePolicyCode] = useState('');
+  const [simPrincipal, setSimPrincipal] = useState('sb:issuer:agent-80');
+  const [simToolName, setSimToolName] = useState('write_file');
+  const [simArgs, setSimArgs] = useState('{"path":"policy.cedar"}');
+  const [simContext, setSimContext] = useState('{\n  "devops": {\n    "pipeline_passed": true,\n    "security_audited": false\n  }\n}');
+  const [simOverrideMode, setSimOverrideMode] = useState(false);
+  const [simDraftPolicy, setSimDraftPolicy] = useState('');
+  const [simLoading, setSimLoading] = useState(false);
+  const [simResult, setSimResult] = useState<any>(null);
+  
+  const [forensicLogs, setForensicLogs] = useState<any[]>([]);
+
   const [feedbackRole, setFeedbackRole] = useState('Auditor');
   const [feedbackComment, setFeedbackComment] = useState('');
   const [feedbackSeverity, setFeedbackSeverity] = useState<'info' | 'warn' | 'critical'>('warn');
@@ -20,11 +40,11 @@ export default function App() {
   const [alignLoading, setAlignLoading] = useState(false);
   
   // OIDC/JWT Authentication States
-  const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem('veritas_jwt') || null);
+  const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem('fidusgate_jwt') || null);
   const [authRole, setAuthRole] = useState<'developer' | 'admin' | 'auditor' | 'unauthenticated'>(
-    (localStorage.getItem('veritas_role') as any) || 'unauthenticated'
+    (localStorage.getItem('fidusgate_role') as any) || 'unauthenticated'
   );
-  const [authEmail, setAuthEmail] = useState(localStorage.getItem('veritas_email') || 'admin@veritas.internal');
+  const [authEmail, setAuthEmail] = useState(localStorage.getItem('fidusgate_email') || 'admin@fidusgate.internal');
   const [authLoading, setAuthLoading] = useState(false);
 
   // Form states
@@ -45,7 +65,7 @@ export default function App() {
 
   // Terminal Console state
   const [consoleLines, setConsoleLines] = useState<string[]>([
-    '🚀 VeritasAudit Unified Security Shell v1.2.0 initialized.',
+    '🚀 FidusGate Unified Security Shell v1.2.0 initialized.',
     '⚙️  Local environment verified. Docker daemon detected (Active).',
     '🛡️  Cedar policy governance gateway online (Dual-Mode active).',
     '📡 Standing by for live sandbox command execution. Type "help" to list workflows.'
@@ -53,6 +73,8 @@ export default function App() {
   const [consoleInput, setConsoleInput] = useState('');
   const [activePlaybook, setActivePlaybook] = useState<string | null>(null);
   const consoleEndRef = useRef<HTMLDivElement | null>(null);
+  const [showArchPanel, setShowArchPanel] = useState(false);
+  const [selectedArchComp, setSelectedArchComp] = useState<string | null>('gateway');
 
   // Auto-scroll terminal console to bottom on every log change
   useEffect(() => {
@@ -71,21 +93,173 @@ export default function App() {
   // Fetch all data from backend
   const fetchData = useCallback(async () => {
     try {
-      const [txRes, receiptsRes, findingsRes, plmRes] = await Promise.all([
+      const [txRes, receiptsRes, findingsRes, plmRes, ibpRes, claimsRes, patchRes, driftRes, logsRes, policyRes] = await Promise.all([
         fetch(`${API_BASE}/transactions`, { headers: getHeaders() }),
         fetch(`${API_BASE}/receipts`, { headers: getHeaders() }),
         fetch(`${API_BASE}/findings`, { headers: getHeaders() }),
-        fetch(`${API_BASE}/plm/state`, { headers: getHeaders() })
+        fetch(`${API_BASE}/plm/state`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/ibp/state`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/auth/attested-claims`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/sandbox/patch`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/sandbox/drift`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/logs/commands`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/policy/active`, { headers: getHeaders() })
       ]);
 
       if (txRes.ok) setTransactions(await txRes.json());
       if (receiptsRes.ok) setReceipts(await receiptsRes.json());
       if (findingsRes.ok) setFindings(await findingsRes.json());
       if (plmRes.ok) setPlmState(await plmRes.json());
+      if (ibpRes.ok) setIbpState(await ibpRes.json());
+      if (claimsRes.ok) setAttestedClaims(await claimsRes.json());
+      if (patchRes.ok) setPendingPatch(await patchRes.json());
+      if (driftRes.ok) setDriftState(await driftRes.json());
+      if (logsRes.ok) setForensicLogs(await logsRes.json());
+      if (policyRes.ok) {
+        const data = await policyRes.json();
+        setActivePolicyCode(data.code);
+        setSimDraftPolicy(prev => prev || data.code);
+      }
     } catch (e) {
       console.error('Failed to fetch data from security gateway', e);
     }
   }, [getHeaders]);
+
+  const handleSimulate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSimLoading(true);
+    setSimResult(null);
+
+    try {
+      let parsedArgs = {};
+      try {
+        parsedArgs = JSON.parse(simArgs);
+      } catch (err) {
+        alert('Args must be a valid JSON object');
+        setSimLoading(false);
+        return;
+      }
+
+      let parsedContext = {};
+      try {
+        parsedContext = JSON.parse(simContext);
+      } catch (err) {
+        alert('Context must be a valid JSON object');
+        setSimLoading(false);
+        return;
+      }
+
+      const payload: any = {
+        principal: simPrincipal,
+        toolName: simToolName,
+        args: parsedArgs,
+        context: parsedContext
+      };
+
+      if (simOverrideMode) {
+        payload.policyOverride = simDraftPolicy;
+      }
+
+      const res = await fetch(`${API_BASE}/policy/simulate`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setSimResult(data);
+      } else {
+        const err = await res.json();
+        alert(`Simulation failed: ${err.error || err.message}`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('Network error during simulation');
+    } finally {
+      setSimLoading(false);
+    }
+  };
+
+  const handleDownloadComplianceReceipt = async (logId: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/logs/compliance/${logId}/export`, {
+        headers: getHeaders()
+      });
+
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `fidusgate-compliance-receipt-${logId}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } else {
+        const err = await res.json();
+        alert(`Export failed: ${err.error || err.message || 'Unauthorized access'}`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('Failed to download compliance receipt.');
+    }
+  };
+
+  const handleApplyPatch = async () => {
+    setPatchApplyLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/sandbox/apply`, {
+        method: 'POST',
+        headers: getHeaders()
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setConsoleLines(prev => [
+          ...prev,
+          `✅ [SecOps] Attested sandbox patch successfully applied and merged into host workspace.`
+        ]);
+        fetchData();
+      } else {
+        setConsoleLines(prev => [
+          ...prev,
+          `❌ [SecOps] Patch application failed: ${data.error}`
+        ]);
+      }
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setPatchApplyLoading(false);
+    }
+  };
+
+  const handleDriftSync = async () => {
+    setDriftSyncLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/sandbox/drift-sync`, {
+        method: 'POST',
+        headers: getHeaders()
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setConsoleLines(prev => [
+          ...prev,
+          `✅ [SecOps] Scoped CLAUDE.md memory map drift audit completed. Heatmap reset to ALIGNED.`
+        ]);
+        fetchData();
+      } else {
+        setConsoleLines(prev => [
+          ...prev,
+          `❌ [SecOps] Memory map sync failed: ${data.error}`
+        ]);
+      }
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setDriftSyncLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -107,9 +281,9 @@ export default function App() {
         const data = await res.json();
         setAuthToken(data.token);
         setAuthRole(data.role);
-        localStorage.setItem('veritas_jwt', data.token);
-        localStorage.setItem('veritas_role', data.role);
-        localStorage.setItem('veritas_email', data.email);
+        localStorage.setItem('fidusgate_jwt', data.token);
+        localStorage.setItem('fidusgate_role', data.role);
+        localStorage.setItem('fidusgate_email', data.email);
         
         setConsoleLines(prev => [
           ...prev,
@@ -131,9 +305,9 @@ export default function App() {
   const handleOidcLogout = () => {
     setAuthToken(null);
     setAuthRole('unauthenticated');
-    localStorage.removeItem('veritas_jwt');
-    localStorage.removeItem('veritas_role');
-    localStorage.removeItem('veritas_email');
+    localStorage.removeItem('fidusgate_jwt');
+    localStorage.removeItem('fidusgate_role');
+    localStorage.removeItem('fidusgate_email');
     
     // Explicitly flush state arrays on logout for leak-proof security
     setTransactions([]);
@@ -410,7 +584,7 @@ export default function App() {
         setConsoleLines(prev => [
           ...prev,
           '=============================================================',
-          '🛡️  VERITAS AUDIT SECURITY INTERACTIVE PLAYBOOK MENU',
+          '🛡️  FIDUSGATE SECURITY INTERACTIVE PLAYBOOK MENU',
           '=============================================================',
           'Type or click any of these simple playbooks to trigger live shields:',
           '  test-pii     - Test automatic PII filtering & transaction flagging',
@@ -666,13 +840,13 @@ export default function App() {
               '🟢 SLACK WEBHOOK DISPATCHED PAYLOAD (RICH BLOCKS):',
               '=============================================================',
               JSON.stringify({
-                text: "🚨 VeritasAudit Security Alert: Blocked AI Agent Action!",
+                text: "🚨 FidusGate Security Alert: Blocked AI Agent Action!",
                 blocks: [
                   {
                     type: "section",
                     text: {
                       type: "mrkdwn",
-                      text: "🚨 *VeritasAudit Security Alert: Blocked AI Agent Action!*\nAn autonomous coding agent attempted to execute a high-risk tool call that was programmatically blocked by Cedar policy controls."
+                      text: "🚨 *FidusGate Security Alert: Blocked AI Agent Action!*\nAn autonomous coding agent attempted to execute a high-risk tool call that was programmatically blocked by Cedar policy controls."
                     }
                   },
                   {
@@ -743,7 +917,7 @@ export default function App() {
     if (!consoleInput.trim()) return;
 
     const fullCmd = consoleInput.trim();
-    setConsoleLines(prev => [...prev, `veritas-sandbox $ ${fullCmd}`]);
+    setConsoleLines(prev => [...prev, `fidusgate-sandbox $ ${fullCmd}`]);
     setConsoleInput('');
     await executePlaybook(fullCmd);
   };
@@ -751,7 +925,7 @@ export default function App() {
   // Playbook Button Trigger Handler
   const handlePlaybookClick = async (cmd: string) => {
     if (activePlaybook) return; // Prevent concurrent run jams
-    setConsoleLines(prev => [...prev, `veritas-sandbox $ ${cmd}`]);
+    setConsoleLines(prev => [...prev, `fidusgate-sandbox $ ${cmd}`]);
     await executePlaybook(cmd);
   };
 
@@ -764,13 +938,14 @@ export default function App() {
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'hsl(var(--primary))', filter: 'drop-shadow(0 0 8px hsla(var(--primary), 0.45))' }}>
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             </svg>
-            VeritasAudit Security Portal
+            FidusGate Security Portal
           </h1>
           <p>Secure, Governed, and Self-Refactoring AI-Agentic SDLC Console</p>
         </div>
         <div className="system-status">
           <div className="status-indicator"></div>
           <span className="status-label">SECURITY ONLINE</span>
+
           <button className="btn btn-secondary" onClick={handleResetDatabase} style={{ marginLeft: '0.8rem', padding: '0.35rem 0.85rem', fontSize: '0.78rem' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
@@ -802,7 +977,7 @@ export default function App() {
                 className="form-control oidc-input" 
                 value={authEmail}
                 onChange={e => setAuthEmail(e.target.value)}
-                placeholder="admin@veritas.internal"
+                placeholder="admin@fidusgate.internal"
               />
               <button className="btn btn-secondary" onClick={() => handleOidcLogin('developer')} disabled={authLoading}>
                 Login as Developer
@@ -829,6 +1004,344 @@ export default function App() {
               </button>
             </>
           )}
+        </div>
+      </section>
+
+      {/* Enterprise SecOps Attestation & Token Budget Dashboard */}
+      <section className="glass-panel secops-dashboard-panel animate-fade-in" style={{ marginTop: '2rem' }}>
+        <div className="secops-panel-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{ color: 'hsl(var(--info))', filter: 'drop-shadow(0 0 8px hsla(var(--info), 0.4))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: '#fff' }}>
+                Enterprise SecOps Attestation & Token Budget Console
+              </h3>
+              <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'hsl(var(--text-secondary))' }}>
+                Verified cryptographic signatures, real-time autonomous token utilization, and active policy gates.
+              </p>
+            </div>
+          </div>
+          
+          <div className="status-badge status-completed animate-glow-green">
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#00ff66', display: 'inline-block' }}></span>
+            Dual-Mode Governance Engine Active
+          </div>
+        </div>
+
+        <div className="secops-panel-content">
+          {/* Card 1: Cryptographic SME Role Keys & Attestation Graph */}
+          <div className="secops-card">
+            <div>
+              <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'hsl(var(--text-secondary))' }}>
+                Cryptographic SME Role Keys
+              </h4>
+              <div className="sme-keys-grid">
+                <div className="sme-key-card">
+                  <div className="sme-key-header">
+                    <span className="sme-key-role">Backend SME</span>
+                    <span className="sme-key-status" style={{ backgroundColor: '#00ff66', boxShadow: '0 0 8px #00ff66' }}></span>
+                  </div>
+                  <span className="sme-key-hash">0x7f3a9e2db0a1b2c3</span>
+                </div>
+
+                <div className="sme-key-card">
+                  <div className="sme-key-header">
+                    <span className="sme-key-role">DevOps SME</span>
+                    <span className="sme-key-status" style={{ backgroundColor: '#00ff66', boxShadow: '0 0 8px #00ff66' }}></span>
+                  </div>
+                  <span className="sme-key-hash">0x9e5b8d2cf1b3c4d5</span>
+                </div>
+
+                <div className="sme-key-card">
+                  <div className="sme-key-header">
+                    <span className="sme-key-role">QA SME</span>
+                    <span className="sme-key-status" style={{ backgroundColor: '#00ff66', boxShadow: '0 0 8px #00ff66' }}></span>
+                  </div>
+                  <span className="sme-key-hash">0x8c4b9e2da0c4d5e6</span>
+                </div>
+
+                <div className="sme-key-card">
+                  <div className="sme-key-header">
+                    <span className="sme-key-role">Security SME</span>
+                    <span className="sme-key-status" style={{ backgroundColor: '#00ff66', boxShadow: '0 0 8px #00ff66' }}></span>
+                  </div>
+                  <span className="sme-key-hash">0xd15c8f2ba1d5e6f7</span>
+                </div>
+              </div>
+
+              {/* Live Workload Attestation Graph */}
+              {attestedClaims && attestedClaims.attested ? (
+                <div style={{ marginTop: '1rem', borderTop: '1px solid hsl(var(--border-color))', paddingTop: '1rem' }}>
+                  <h5 style={{ margin: '0 0 0.6rem 0', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'hsl(var(--text-secondary))' }}>
+                    Live Attestation Graph
+                  </h5>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.2)', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid hsl(var(--border-color))' }}>
+                    {/* Agent Node */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
+                      <span style={{ fontSize: '0.62rem', color: 'hsl(var(--text-muted))', textTransform: 'uppercase' }}>Workload</span>
+                      <span className="status-badge status-completed" style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem', borderColor: 'hsla(var(--primary), 0.3)', background: 'hsla(var(--primary), 0.1)', color: 'hsl(var(--primary))' }}>
+                        {attestedClaims?.role?.toUpperCase() || 'AGENT'}
+                      </span>
+                    </div>
+                    
+                    {/* Animated Glowing Connection Line */}
+                    <div style={{ flexGrow: 1, height: '2px', background: 'linear-gradient(90deg, hsl(var(--primary)) 0%, #00ff66 100%)', position: 'relative', margin: '0 0.5rem', opacity: 0.85 }}>
+                      <span style={{ position: 'absolute', top: '-3px', left: '50%', transform: 'translateX(-50%)', width: '8px', height: '8px', borderRadius: '50%', background: '#00ff66', boxShadow: '0 0 10px #00ff66', animation: 'pulseGlow 2s infinite alternate ease-in-out' }}></span>
+                    </div>
+
+                    {/* Platform Gate Node */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
+                      <span style={{ fontSize: '0.62rem', color: 'hsl(var(--text-muted))', textTransform: 'uppercase' }}>OIDC Gating</span>
+                      <span className="status-badge status-completed" style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem' }}>
+                        VERIFIED
+                      </span>
+                    </div>
+
+                    {/* Animated Glowing Connection Line */}
+                    <div style={{ flexGrow: 1, height: '2px', background: '#00ff66', position: 'relative', margin: '0 0.5rem', opacity: 0.85 }}>
+                      <span style={{ position: 'absolute', top: '-3px', left: '50%', transform: 'translateX(-50%)', width: '8px', height: '8px', borderRadius: '50%', background: '#00ff66', boxShadow: '0 0 10px #00ff66' }}></span>
+                    </div>
+
+                    {/* Host Workspace Node */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
+                      <span style={{ fontSize: '0.62rem', color: 'hsl(var(--text-muted))', textTransform: 'uppercase' }}>Workspace</span>
+                      <span className="status-badge status-completed" style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem', borderColor: 'hsla(var(--info), 0.3)', background: 'hsla(var(--info), 0.1)', color: 'hsl(var(--info))' }}>
+                        SECURE
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.65rem', color: 'hsl(var(--text-muted))', marginTop: '0.5rem', fontFamily: 'monospace', wordBreak: 'break-all', textAlign: 'center' }}>
+                    ID: {attestedClaims?.workloadId || 'spiffe://fidusgate.internal/ns/sandbox/sa'}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            
+            <div style={{ fontSize: '0.72rem', color: 'hsl(var(--text-muted))', textAlign: 'center', marginTop: '0.5rem', borderTop: '1px solid hsl(var(--border-color))', paddingTop: '0.5rem' }}>
+              🔑 Hardware security modules (HSM) verified.
+            </div>
+          </div>
+
+          {/* Card 2: IBP Token Budget Gauge & Drift Heatmap */}
+          <div className="secops-card">
+            <div>
+              <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'hsl(var(--text-secondary))' }}>
+                IBP Autonomous Token Budget
+              </h4>
+              
+              {ibpState ? (
+                <div className="budget-gauge-wrapper">
+                  <div className="budget-stats">
+                    <span style={{ color: 'hsl(var(--text-secondary))' }}>Sprint Limit:</span>
+                    <strong style={{ color: '#fff' }}>{(ibpState.tokenBudget || 80000).toLocaleString()}</strong>
+                  </div>
+                  
+                  <div className="budget-stats" style={{ marginTop: '-0.3rem' }}>
+                    <span style={{ color: 'hsl(var(--text-secondary))' }}>Consumed:</span>
+                    <strong style={{ 
+                      color: (ibpState.tokensConsumed || 0) >= (ibpState.tokenBudget || 80000) * 0.9 ? 'hsl(var(--danger))' :
+                             (ibpState.tokensConsumed || 0) >= (ibpState.tokenBudget || 80000) * 0.7 ? 'hsl(var(--warning))' : '#00ff66'
+                    }}>
+                      {(ibpState.tokensConsumed || 0).toLocaleString()} ({(Math.min(100, Math.max(0, ((ibpState.tokensConsumed || 0) / (ibpState.tokenBudget || 80000)) * 100))).toFixed(1)}%)
+                    </strong>
+                  </div>
+
+                  <div className="budget-progress-track" style={{ marginTop: '0.5rem' }}>
+                    <div 
+                      className="budget-progress-bar"
+                      style={{ 
+                        width: `${Math.min(100, Math.max(0, ((ibpState.tokensConsumed || 0) / (ibpState.tokenBudget || 80000)) * 100))}%`,
+                        backgroundColor: (ibpState.tokensConsumed || 0) >= (ibpState.tokenBudget || 80000) * 0.9 ? 'hsl(var(--danger))' :
+                                         (ibpState.tokensConsumed || 0) >= (ibpState.tokenBudget || 80000) * 0.7 ? 'hsl(var(--warning))' : '#00ff66',
+                        boxShadow: (ibpState.tokensConsumed || 0) >= (ibpState.tokenBudget || 80000) * 0.9 ? '0 0 10px hsla(var(--danger), 0.5)' :
+                                   (ibpState.tokensConsumed || 0) >= (ibpState.tokenBudget || 80000) * 0.7 ? '0 0 10px hsla(var(--warning), 0.5)' : '0 0 10px rgba(0, 255, 102, 0.5)'
+                      }}
+                    ></div>
+                  </div>
+                  
+                  <div style={{ fontSize: '0.78rem', color: 'hsl(var(--text-secondary))', marginTop: '0.5rem', fontStyle: 'italic', lineHeight: 1.4 }}>
+                    "{ibpState.currentSprintGoal || 'Standardize Antigravity Project Compliance'}"
+                  </div>
+                </div>
+              ) : (
+                <div style={{ color: 'hsl(var(--text-muted))', fontSize: '0.8rem', textAlign: 'center', padding: '1.5rem 0' }}>
+                  Loading budget specifications...
+                </div>
+              )}
+
+              {/* Dynamic Codebase Memory Drift Heatmap */}
+              <div style={{ marginTop: '1rem', borderTop: '1px solid hsl(var(--border-color))', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h5 style={{ margin: 0, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'hsl(var(--text-secondary))' }}>
+                    Memory Drift Heatmap (CLAUDE.md)
+                  </h5>
+                  <button 
+                    className="playbook-run-button" 
+                    onClick={handleDriftSync}
+                    disabled={driftSyncLoading}
+                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
+                  >
+                    {driftSyncLoading ? 'Syncing...' : 'Sync Memory'}
+                  </button>
+                </div>
+                
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  {driftState && driftState.length > 0 ? (
+                    driftState.map((d: any, idx: number) => {
+                      const isStale = d.status === 'stale';
+                      const bg = isStale ? 'rgba(255, 107, 107, 0.08)' : 'rgba(0, 255, 102, 0.08)';
+                      const border = isStale ? '1px solid rgba(255, 107, 107, 0.2)' : '1px solid rgba(0, 255, 102, 0.2)';
+                      const color = isStale ? 'hsl(var(--danger))' : '#00ff66';
+                      return (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', backgroundColor: bg, border, borderRadius: '4px', padding: '0.2rem 0.5rem', fontSize: '0.72rem' }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: color, boxShadow: `0 0 6px ${color}` }}></span>
+                          <span style={{ color: '#fff', fontWeight: 600 }}>{d.name.split('/').pop()}</span>
+                          {isStale ? <span style={{ color, fontSize: '0.66rem' }}>({d.driftSeconds}s)</span> : null}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <span style={{ fontSize: '0.72rem', color: 'hsl(var(--text-muted))' }}>Scanning codebase drift...</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: '0.75rem', color: 'hsl(var(--text-muted))', borderTop: '1px solid hsl(var(--border-color))', paddingTop: '0.5rem', textAlign: 'center' }}>
+              📊 Sync rate: Real-time via agent memory
+            </div>
+          </div>
+
+          {/* Card 3: Cedar Evaluation Gates Status */}
+          <div className="secops-card">
+            <div>
+              <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'hsl(var(--text-secondary))' }}>
+                Cedar Evaluation Gates
+              </h4>
+
+              <div className="gate-status-grid">
+                {/* DevOps Gate */}
+                <div className="gate-status-node">
+                  <div className="gate-node-info">
+                    <span className="gate-node-name">DevOps Gate</span>
+                    <span className="gate-node-desc">CI Pipelines & Security Scans</span>
+                  </div>
+                  {findings.length === 0 ? (
+                    <div className="gate-node-light gate-light-active">
+                      <span className="gate-light-dot" style={{ background: '#00ff66', boxShadow: '0 0 8px #00ff66' }}></span>
+                      Secure
+                    </div>
+                  ) : (
+                    <div className="gate-node-light gate-light-locked animate-pulse-red">
+                      <span className="gate-light-dot" style={{ background: 'hsl(var(--danger))', boxShadow: '0 0 8px hsl(var(--danger))' }}></span>
+                      Violated
+                    </div>
+                  )}
+                </div>
+
+                {/* IBP Gate */}
+                <div className="gate-status-node">
+                  <div className="gate-node-info">
+                    <span className="gate-node-name">IBP Gate</span>
+                    <span className="gate-node-desc">Token Alignment & Reports</span>
+                  </div>
+                  {ibpState?.crossFunctionalSynthesized ? (
+                    <div className="gate-node-light gate-light-active">
+                      <span className="gate-light-dot" style={{ background: '#00ff66', boxShadow: '0 0 8px #00ff66' }}></span>
+                      Aligned
+                    </div>
+                  ) : (
+                    <div className="gate-node-light gate-light-locked animate-pulse-red">
+                      <span className="gate-light-dot" style={{ background: 'hsl(var(--danger))', boxShadow: '0 0 8px hsl(var(--danger))' }}></span>
+                      Pending
+                    </div>
+                  )}
+                </div>
+
+                {/* PLM Gate */}
+                <div className="gate-status-node">
+                  <div className="gate-node-info">
+                    <span className="gate-node-name">PLM Gate</span>
+                    <span className="gate-node-desc">API Schema Drift & Releases</span>
+                  </div>
+                  {plmState?.feedbackAligned ? (
+                    <div className="gate-node-light gate-light-active">
+                      <span className="gate-light-dot" style={{ background: '#00ff66', boxShadow: '0 0 8px #00ff66' }}></span>
+                      Released
+                    </div>
+                  ) : (
+                    <div className="gate-node-light gate-light-locked animate-pulse-red">
+                      <span className="gate-light-dot" style={{ background: 'hsl(var(--danger))', boxShadow: '0 0 8px hsl(var(--danger))' }}></span>
+                      Locked
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: '0.75rem', color: 'hsl(var(--text-muted))', borderTop: '1px solid hsl(var(--border-color))', paddingTop: '0.5rem', textAlign: 'center' }}>
+              🔒 Cryptographically enforced by Cedar Daemon
+            </div>
+          </div>
+
+          {/* Full-width Card 4: Interactive Diff-Apply Patch review terminal */}
+          {pendingPatch && pendingPatch.exists ? (
+            <div className="secops-card animate-fade-in" style={{ gridColumn: 'span 3', borderStyle: 'dashed', borderColor: 'hsla(var(--primary), 0.5)', background: 'rgba(0, 0, 0, 0.25)', display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', width: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                  <span style={{ color: 'hsl(var(--warning))', display: 'flex', alignItems: 'center' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="8" x2="12" y2="12" />
+                      <line x1="12" y1="16" x2="12.01" y2="16" />
+                    </svg>
+                  </span>
+                  <h4 style={{ margin: 0, fontSize: '0.88rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#fff' }}>
+                    Attestation Required: Ephemeral Sandbox Pending Diff Patch
+                  </h4>
+                </div>
+                
+                <button 
+                  className="btn btn-primary" 
+                  onClick={handleApplyPatch} 
+                  disabled={patchApplyLoading}
+                  style={{ background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsla(var(--primary), 0.7) 100%)', padding: '0.45rem 1rem', fontSize: '0.8rem', marginLeft: 'auto' }}
+                >
+                  {patchApplyLoading ? (
+                    <span>Processing merge...</span>
+                  ) : (
+                    <>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m12 14 4-4-4-4"/>
+                        <path d="M4 20V8a2 2 0 0 1 2-2h4"/>
+                      </svg>
+                      Attest & Merge Workspace Changes
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Colored Unified Diff View */}
+              <div className="finding-evidence" style={{ maxHeight: '200px', width: '100%', overflowY: 'auto' }}>
+                {pendingPatch.patch.split('\n').map((line: string, idx: number) => {
+                  const isAddition = line.startsWith('+') && !line.startsWith('+++');
+                  const isDeletion = line.startsWith('-') && !line.startsWith('---');
+                  const color = isAddition ? '#00ff66' : isDeletion ? 'hsl(var(--danger))' : '#c9d1d9';
+                  const bg = isAddition ? 'rgba(0, 255, 102, 0.08)' : isDeletion ? 'rgba(255, 107, 107, 0.08)' : 'transparent';
+                  return (
+                    <div key={idx} style={{ color, backgroundColor: bg, fontFamily: 'monospace', fontSize: '0.76rem', padding: '0.1rem 0.4rem', whiteSpace: 'pre-wrap' }}>
+                      {line}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -1323,6 +1836,278 @@ export default function App() {
         </div>
       </div>
 
+      {/* Visual Live + Draft Policy Simulator & Forensic Compliance Timeline Section */}
+      <div className="dashboard-grid" style={{ marginTop: '2rem' }}>
+        
+        {/* Live + Draft Policy Simulator Panel */}
+        <section className="glass-panel">
+          <div className="card-header">
+            <h2 className="card-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'hsl(var(--primary))', filter: 'drop-shadow(0 0 8px hsla(var(--primary), 0.4))' }}>
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              Live + Draft Cedar Policy Simulator
+            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span className="status-badge status-completed">Dual-Mode Active</span>
+            </div>
+          </div>
+          
+          <div className="card-body">
+            <form onSubmit={handleSimulate}>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.25rem', background: 'rgba(0,0,0,0.2)', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid hsl(var(--border-color))' }}>
+                <input 
+                  type="checkbox" 
+                  id="simOverrideMode" 
+                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                  checked={simOverrideMode} 
+                  onChange={e => setSimOverrideMode(e.target.checked)} 
+                />
+                <label htmlFor="simOverrideMode" style={{ fontSize: '0.86rem', fontWeight: '600', color: '#fff', cursor: 'pointer', margin: 0 }}>
+                  Enable Custom Draft Policy Overlay (In-Memory Dry Run)
+                </label>
+              </div>
+
+              {simOverrideMode && (
+                <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                  <label>Draft Policy Overlay Editor (policy.cedar)</label>
+                  <textarea 
+                    className="form-control" 
+                    style={{ height: '220px', fontFamily: 'monospace', fontSize: '0.8rem', resize: 'vertical', background: 'rgba(0,0,0,0.5)', border: '1px solid hsla(var(--primary), 0.3)' }}
+                    value={simDraftPolicy}
+                    onChange={e => setSimDraftPolicy(e.target.value)}
+                    placeholder="Enter Cedar policies here..."
+                  />
+                  <span style={{ fontSize: '0.72rem', color: 'hsl(var(--text-muted))', marginTop: '0.3rem' }}>
+                    * Draft modifications remain isolated strictly in-memory and will not overwrite the production policy on disk.
+                  </span>
+                </div>
+              )}
+
+              <details style={{ marginTop: '0.8rem', marginBottom: '1.25rem', background: 'rgba(0,0,0,0.15)', border: '1px solid hsl(var(--border-color))', borderRadius: '6px', padding: '0.5rem' }}>
+                <summary style={{ fontSize: '0.78rem', color: 'hsl(var(--text-secondary))', cursor: 'pointer', fontWeight: 600 }}>
+                  View Active Production Policy Code (ReadOnly)
+                </summary>
+                <pre style={{ margin: '0.5rem 0 0 0', padding: '0.65rem 0.85rem', background: '#05070f', border: '1px solid hsl(var(--border-color))', borderRadius: '6px', fontSize: '0.72rem', color: '#00ff66', fontFamily: 'monospace', whiteSpace: 'pre-wrap', maxHeight: '180px', overflowY: 'auto' }}>
+                  {activePolicyCode || 'No active policy loaded.'}
+                </pre>
+              </details>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="simPrincipal">Mock Principal (User / Role Identity)</label>
+                  <select 
+                    id="simPrincipal" 
+                    className="form-control"
+                    value={simPrincipal}
+                    onChange={e => setSimPrincipal(e.target.value)}
+                  >
+                    <option value="sb:issuer:agent-80">sb:issuer:agent-80 (Tier 4 Security Agent)</option>
+                    <option value="sb:issuer:pm-sme">sb:issuer:pm-sme (Product Owner)</option>
+                    <option value="sb:issuer:architecture-sme">sb:issuer:architecture-sme (Architect)</option>
+                    <option value="sb:issuer:devops-sme">sb:issuer:devops-sme (DevOps / SRE)</option>
+                  </select>
+                </div>
+                
+                <div className="form-group">
+                  <label htmlFor="simToolName">Mock Action (Tool Name Call)</label>
+                  <select 
+                    id="simToolName" 
+                    className="form-control"
+                    value={simToolName}
+                    onChange={e => setSimToolName(e.target.value)}
+                  >
+                    <option value="write_file">write_file (Modify Files)</option>
+                    <option value="execute_command">execute_command (Shell Execution)</option>
+                    <option value="read_file">read_file (Read Files)</option>
+                    <option value="list_dir">list_dir (Inspect Directory)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="simArgs">Mock Tool Arguments (JSON)</label>
+                  <textarea 
+                    id="simArgs"
+                    className="form-control" 
+                    style={{ height: '76px', fontFamily: 'monospace', fontSize: '0.8rem', resize: 'none' }}
+                    value={simArgs}
+                    onChange={e => setSimArgs(e.target.value)}
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label htmlFor="simContext">Stateful Context Properties (JSON)</label>
+                  <textarea 
+                    id="simContext"
+                    className="form-control" 
+                    style={{ height: '76px', fontFamily: 'monospace', fontSize: '0.8rem', resize: 'none' }}
+                    value={simContext}
+                    onChange={e => setSimContext(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <button 
+                type="submit" 
+                className="btn btn-primary" 
+                style={{ width: '100%', marginTop: '0.5rem', background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsla(var(--primary), 0.7) 100%)' }} 
+                disabled={simLoading}
+              >
+                {simLoading ? 'Evaluating Rules...' : 'Evaluate Permission Gate'}
+              </button>
+            </form>
+
+            {simResult && (
+              <div 
+                className="animate-fade-in" 
+                style={{ 
+                  marginTop: '1.5rem', 
+                  padding: '1.25rem', 
+                  borderRadius: '12px',
+                  border: simResult.decision === 'allow' ? '1px solid rgba(0, 255, 102, 0.25)' : '1px solid rgba(255, 107, 107, 0.25)',
+                  background: simResult.decision === 'allow' ? 'rgba(0, 255, 102, 0.04)' : 'rgba(255, 107, 107, 0.04)'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
+                  <span style={{ fontSize: '0.88rem', fontWeight: '700', color: '#fff' }}>Evaluation Diagnostics:</span>
+                  <span 
+                    className={`status-badge ${simResult.decision === 'allow' ? 'status-completed' : 'status-failed'}`}
+                    style={{ 
+                      fontSize: '0.86rem', 
+                      padding: '0.25rem 0.75rem',
+                      boxShadow: simResult.decision === 'allow' ? '0 0 10px rgba(0, 255, 102, 0.3)' : '0 0 10px rgba(255, 107, 107, 0.3)'
+                    }}
+                  >
+                    {simResult.decision.toUpperCase()}
+                  </span>
+                </div>
+                
+                <div style={{ fontSize: '0.86rem', color: '#fff', fontFamily: 'monospace', marginBottom: '0.8rem', lineHeight: '1.45', wordBreak: 'break-word' }}>
+                  <strong>Reason: </strong> {simResult.reason}
+                </div>
+
+                {simResult.matchingPolicies && simResult.matchingPolicies.length > 0 && (
+                  <div>
+                    <span style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'hsl(var(--text-secondary))', display: 'block', marginBottom: '0.4rem' }}>
+                      Satisfied Matching Policies:
+                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      {simResult.matchingPolicies.map((policy: string, idx: number) => (
+                        <div key={idx} style={{ fontSize: '0.76rem', color: 'hsl(var(--text-secondary))', padding: '0.4rem 0.6rem', background: 'rgba(0,0,0,0.3)', borderLeft: '3px solid hsl(var(--primary))', borderRadius: '4px', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+                          {policy}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Forensic Command Timeline Panel */}
+        <section className="glass-panel" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="card-header">
+            <h2 className="card-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'hsl(var(--info))', filter: 'drop-shadow(0 0 8px hsla(var(--info), 0.4))' }}>
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+              Forensic Command Timeline
+            </h2>
+            <span className="status-badge status-pending">{forensicLogs.length} Audited Events</span>
+          </div>
+
+          <div className="card-body" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '1.1rem', maxHeight: '580px', overflowY: 'auto', paddingRight: '0.35rem' }}>
+            {forensicLogs.map((logItem: any) => {
+              const isAllow = logItem.cedarDecision === 'allow';
+              const isSuccess = logItem.status === 'success';
+              return (
+                <div 
+                  key={logItem.id} 
+                  style={{ 
+                    background: 'rgba(0, 0, 0, 0.25)', 
+                    border: '1px solid hsl(var(--border-color))', 
+                    borderRadius: '12px', 
+                    padding: '1rem',
+                    transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.65rem'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.62rem', fontWeight: '700', textTransform: 'uppercase', background: 'rgba(255, 255, 255, 0.08)', padding: '0.15rem 0.4rem', borderRadius: '4px', color: '#fff' }}>
+                        ID: {logItem.id}
+                      </span>
+                      <span style={{ fontSize: '0.78rem', color: 'hsl(var(--text-secondary))' }}>
+                        {new Date(logItem.timestamp).toLocaleString()}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.4rem' }}>
+                      <span className={`status-badge ${isAllow ? 'status-completed' : 'status-failed'}`} style={{ fontSize: '0.68rem', padding: '0.1rem 0.45rem' }}>
+                        cedar: {logItem.cedarDecision}
+                      </span>
+                      <span className={`status-badge ${isSuccess ? 'status-completed' : 'status-failed'}`} style={{ fontSize: '0.68rem', padding: '0.1rem 0.45rem' }}>
+                        run: {logItem.status} (exit: {logItem.exitCode})
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.78rem', color: 'hsl(var(--text-muted))' }}>
+                        Invoked by: <strong style={{ color: '#fff' }}>{logItem.user}</strong> ({logItem.role})
+                      </span>
+                    </div>
+                    <pre style={{ margin: '0.4rem 0 0 0', padding: '0.65rem 0.85rem', background: '#05070f', border: '1px solid hsl(var(--border-color))', borderRadius: '6px', fontSize: '0.76rem', color: '#ffaa00', fontFamily: 'monospace', whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
+                      {logItem.command}
+                    </pre>
+                  </div>
+
+                  {(authRole === 'admin' || authRole === 'auditor') && (
+                    <button 
+                      onClick={() => handleDownloadComplianceReceipt(logItem.id)}
+                      className="btn btn-secondary" 
+                      style={{ 
+                        width: '100%', 
+                        padding: '0.35rem 0.85rem', 
+                        fontSize: '0.75rem', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center', 
+                        gap: '0.4rem',
+                        marginTop: '0.2rem',
+                        borderColor: 'hsla(var(--info), 0.3)',
+                        background: 'hsla(var(--info), 0.05)',
+                        color: 'hsl(var(--info))'
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      Download Forensic Compliance Receipt
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+
+            {forensicLogs.length === 0 && (
+              <p style={{ color: 'hsl(var(--text-secondary))', textAlign: 'center', padding: '3rem' }}>
+                No sandboxed commands audited yet. standing by for VM shell activity...
+              </p>
+            )}
+          </div>
+        </section>
+      </div>
+
       {/* Interactive Sandbox & Playbooks Grid Section */}
       <div className="terminal-grid-section" style={{ marginTop: '2rem' }}>
         
@@ -1361,7 +2146,7 @@ export default function App() {
                   Dispatches an anomalous transaction containing Tor credentials and values &gt;$1M. Verifies automated PII email masking and database risk flagging.
                 </p>
                 <div className="playbook-card-action">
-                  <span className="playbook-cmd-preview">veritas-sandbox $ test-pii</span>
+                  <span className="playbook-cmd-preview">fidusgate-sandbox $ test-pii</span>
                   <button className="playbook-run-button" disabled={activePlaybook !== null}>
                     <span>Trigger</span>
                     <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor">
@@ -1387,7 +2172,7 @@ export default function App() {
                   Simulates critical remote curl scripts, directory overrides (rm -rf), and dynamic npm installs inside our gVisor environment to verify total containment blocks.
                 </p>
                 <div className="playbook-card-action">
-                  <span className="playbook-cmd-preview">veritas-sandbox $ test-sandbox</span>
+                  <span className="playbook-cmd-preview">fidusgate-sandbox $ test-sandbox</span>
                   <button className="playbook-run-button" disabled={activePlaybook !== null}>
                     <span>Trigger</span>
                     <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor">
@@ -1424,7 +2209,7 @@ export default function App() {
                   Launches a Docker VM to execute cryptographic signing checks and simulates receipt modifying to trigger instant offline verification alerts.
                 </p>
                 <div className="playbook-card-action">
-                  <span className="playbook-cmd-preview">veritas-sandbox $ test-receipt</span>
+                  <span className="playbook-cmd-preview">fidusgate-sandbox $ test-receipt</span>
                   <button className="playbook-run-button" disabled={activePlaybook !== null || authRole !== 'admin'}>
                     <span>Trigger</span>
                     <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor">
@@ -1461,7 +2246,7 @@ export default function App() {
                   Audits our live Actions pipeline YAML files. Instantly parses the Abstract Syntax Tree (AST) to detect and report dynamic prompt-injection vulnerability models.
                 </p>
                 <div className="playbook-card-action">
-                  <span className="playbook-cmd-preview">veritas-sandbox $ test-scanner</span>
+                  <span className="playbook-cmd-preview">fidusgate-sandbox $ test-scanner</span>
                   <button className="playbook-run-button" disabled={activePlaybook !== null || authRole !== 'admin'}>
                     <span>Trigger</span>
                     <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor">
@@ -1487,7 +2272,7 @@ export default function App() {
                   Queries the live access policy engine against simulated agent commands (overwriting files or host shell escapes), evaluating active rules in policy.cedar.
                 </p>
                 <div className="playbook-card-action">
-                  <span className="playbook-cmd-preview">veritas-sandbox $ test-cedar</span>
+                  <span className="playbook-cmd-preview">fidusgate-sandbox $ test-cedar</span>
                   <button className="playbook-run-button" disabled={activePlaybook !== null}>
                     <span>Trigger</span>
                     <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor">
@@ -1524,7 +2309,7 @@ export default function App() {
                   Simulates dynamic tool call violations to generate a security event, validating that Slack operational alert dispatches format rich visual details properly.
                 </p>
                 <div className="playbook-card-action">
-                  <span className="playbook-cmd-preview">veritas-sandbox $ test-alerts</span>
+                  <span className="playbook-cmd-preview">fidusgate-sandbox $ test-alerts</span>
                   <button className="playbook-run-button" disabled={activePlaybook !== null || authRole !== 'admin'}>
                     <span>Trigger</span>
                     <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor">
@@ -1538,6 +2323,244 @@ export default function App() {
           </div>
         </section>
 
+        {/* Architecture Guide — Collapsible Inline Section */}
+        <section className={`glass-panel arch-inline-section ${showArchPanel ? 'expanded' : ''}`}>
+          <div className="arch-inline-header" onClick={() => setShowArchPanel(!showArchPanel)}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+              <div className="arch-inline-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                </svg>
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#fff' }}>
+                  FidusGate Server Architecture Guide
+                </h3>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.78rem', color: 'hsl(var(--text-secondary))' }}>
+                  Explore each workspace component — its purpose, how it runs, and key capabilities.
+                </p>
+              </div>
+            </div>
+            <div className="arch-inline-toggle">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points={showArchPanel ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
+              </svg>
+            </div>
+          </div>
+
+          {showArchPanel && (
+            <div className="arch-inline-body">
+              <div className="arch-components-list">
+                <p style={{ fontSize: '0.78rem', color: 'hsl(var(--text-secondary))', marginBottom: '0.5rem', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                  Select a workspace component:
+                </p>
+                {[
+                  {
+                    id: 'gateway',
+                    name: 'Secure Gateway Backend',
+                    path: 'apps/secure-gateway',
+                    package: '@veritas/secure-gateway',
+                    icon: '🛡️',
+                    value: 'The main zero-trust gatekeeper that intercepts tool calls, evaluates Cedar policies, redacts sensitive PII, and issues tamper-proof cryptographic receipts.',
+                    howItRuns: 'Concurrently in development using "npm run dev" (Port 3001), or as a multi-stage Alpine Docker container in production.',
+                    functions: 'Cedar policy evaluation matching, PII pattern masking, Prometheus telemetry metrics, OIDC auth attestation, and MS Teams / Slack webhook alerting.'
+                  },
+                  {
+                    id: 'dashboard',
+                    name: 'Operations Dashboard',
+                    path: 'apps/admin-dashboard',
+                    package: '@veritas/admin-dashboard',
+                    icon: '🎨',
+                    value: 'Provides real-time visibility, live transaction auditing, dynamic Cedar policy simulator dry-runs, and client-side Ed25519 receipt verification.',
+                    howItRuns: 'Served via Vite at Port 3000 in development, compiled into optimized static HTML/CSS/JS bundles for production deployment.',
+                    functions: 'OIDC token simulation, unified sandbox execution timeline, live policy simulator overrides, and SVG telemetry charts.'
+                  },
+                  {
+                    id: 'daemon',
+                    name: 'Rust Cedar Policy Daemon',
+                    path: 'packages/cedar-daemon',
+                    package: '@veritas/cedar-daemon',
+                    icon: '🦀',
+                    value: 'Executes microsecond-level Cedar authorization queries using a Rust-native tiny-http server and guarantees typological schema safety.',
+                    howItRuns: 'Runs inside a lightweight Alpine Docker container on Port 50051. Secure Gateway forwards validation requests to it.',
+                    functions: 'Schema validation (policy.cedarschema), high-speed context matching, and multi-tier permission decisions.'
+                  },
+                  {
+                    id: 'crypto',
+                    name: 'Cryptographic Utilities',
+                    path: 'packages/crypto-utils',
+                    package: '@veritas/crypto-utils',
+                    icon: '🔑',
+                    value: 'Provides the cryptographic engine for FidusGate, establishing zero-trust non-repudiation using Ed25519 public-key signature blocks.',
+                    howItRuns: 'Imported as a monorepo library. Also includes an offline CLI utility for regulators to verify receipts.',
+                    functions: 'Ed25519 key pair generation, payload signature signing, HSM/KMS provider routing (HashiCorp Vault Transit / Google Cloud KMS).'
+                  },
+                  {
+                    id: 'database',
+                    name: 'Core Database Client',
+                    path: 'packages/database',
+                    package: '@veritas/database',
+                    icon: '💾',
+                    value: 'Manages thread-safe persistence using either lightweight local JSON databases or a production-ready Postgres database structure.',
+                    howItRuns: 'Operates in local flat file mode by default. Connects to Postgres using the Prisma ORM by supplying the DATABASE_URL variable.',
+                    functions: 'JSON database operations, schema-guided Prisma clients, database seeding, and log truncation.'
+                  },
+                  {
+                    id: 'types',
+                    name: 'Unified Core Types',
+                    path: 'packages/core-types',
+                    package: '@veritas/core-types',
+                    icon: '📝',
+                    value: 'Enforces compile-time type boundaries across all applications and shared libraries, ensuring absolute data structure consistency.',
+                    howItRuns: 'Imported globally as the foundation of the npm Workspaces dependency graph. Compiled using tsc.',
+                    functions: 'Log log-entry schemas, Transaction types, AuditReceipt specifications, and SecurityFinding structures.'
+                  },
+                  {
+                    id: 'sandbox',
+                    name: 'Execution Sandbox',
+                    path: 'scripts/*',
+                    package: 'N/A',
+                    icon: '🐳',
+                    value: 'Wraps agent terminal execution within gVisor microVMs and copy-on-write Docker containers, preventing host environment pollution.',
+                    howItRuns: 'Triggered automatically via shell scripts (sandbox-execute.sh, ci-verify.sh) whenever scripts are spawned by the gateway.',
+                    functions: 'Read-only base directory mounting, dynamic diff-patch generation, local CI/CD act emulation, and watcher synchronization.'
+                  }
+                ].map(comp => (
+                  <div 
+                    key={comp.id} 
+                    className={`arch-component-card ${selectedArchComp === comp.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedArchComp(comp.id)}
+                  >
+                    <div className="arch-card-icon">{comp.icon}</div>
+                    <div className="arch-card-meta">
+                      <div className="arch-card-title">{comp.name}</div>
+                      <div className="arch-card-sub">{comp.path}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="arch-detail-panel">
+                {(() => {
+                  const comp = [
+                    {
+                      id: 'gateway',
+                      name: 'Secure Gateway Backend',
+                      path: 'apps/secure-gateway',
+                      package: '@veritas/secure-gateway',
+                      icon: '🛡️',
+                      value: 'The main zero-trust gatekeeper that intercepts tool calls, evaluates Cedar policies, redacts sensitive PII, and issues tamper-proof cryptographic receipts.',
+                      howItRuns: 'Concurrently in development using "npm run dev" (Port 3001), or as a multi-stage Alpine Docker container in production.',
+                      functions: 'Cedar policy evaluation matching, PII pattern masking, Prometheus telemetry metrics, OIDC auth attestation, and MS Teams / Slack webhook alerting.'
+                    },
+                    {
+                      id: 'dashboard',
+                      name: 'Operations Dashboard',
+                      path: 'apps/admin-dashboard',
+                      package: '@veritas/admin-dashboard',
+                      icon: '🎨',
+                      value: 'Provides real-time visibility, live transaction auditing, dynamic Cedar policy simulator dry-runs, and client-side Ed25519 receipt verification.',
+                      howItRuns: 'Served via Vite at Port 3000 in development, compiled into optimized static HTML/CSS/JS bundles for production deployment.',
+                      functions: 'OIDC token simulation, unified sandbox execution timeline, live policy simulator overrides, and SVG telemetry charts.'
+                    },
+                    {
+                      id: 'daemon',
+                      name: 'Rust Cedar Policy Daemon',
+                      path: 'packages/cedar-daemon',
+                      package: '@veritas/cedar-daemon',
+                      icon: '🦀',
+                      value: 'Executes microsecond-level Cedar authorization queries using a Rust-native tiny-http server and guarantees typological schema safety.',
+                      howItRuns: 'Runs inside a lightweight Alpine Docker container on Port 50051. Secure Gateway forwards validation requests to it.',
+                      functions: 'Schema validation (policy.cedarschema), high-speed context matching, and multi-tier permission decisions.'
+                    },
+                    {
+                      id: 'crypto',
+                      name: 'Cryptographic Utilities',
+                      path: 'packages/crypto-utils',
+                      package: '@veritas/crypto-utils',
+                      icon: '🔑',
+                      value: 'Provides the cryptographic engine for FidusGate, establishing zero-trust non-repudiation using Ed25519 public-key signature blocks.',
+                      howItRuns: 'Imported as a monorepo library. Also includes an offline CLI utility for regulators to verify receipts.',
+                      functions: 'Ed25519 key pair generation, payload signature signing, HSM/KMS provider routing (HashiCorp Vault Transit / Google Cloud KMS).'
+                    },
+                    {
+                      id: 'database',
+                      name: 'Core Database Client',
+                      path: 'packages/database',
+                      package: '@veritas/database',
+                      icon: '💾',
+                      value: 'Manages thread-safe persistence using either lightweight local JSON databases or a production-ready Postgres database structure.',
+                      howItRuns: 'Operates in local flat file mode by default. Connects to Postgres using the Prisma ORM by supplying the DATABASE_URL variable.',
+                      functions: 'JSON database operations, schema-guided Prisma clients, database seeding, and log truncation.'
+                    },
+                    {
+                      id: 'types',
+                      name: 'Unified Core Types',
+                      path: 'packages/core-types',
+                      package: '@veritas/core-types',
+                      icon: '📝',
+                      value: 'Enforces compile-time type boundaries across all applications and shared libraries, ensuring absolute data structure consistency.',
+                      howItRuns: 'Imported globally as the foundation of the npm Workspaces dependency graph. Compiled using tsc.',
+                      functions: 'Log log-entry schemas, Transaction types, AuditReceipt specifications, and SecurityFinding structures.'
+                    },
+                    {
+                      id: 'sandbox',
+                      name: 'Execution Sandbox',
+                      path: 'scripts/*',
+                      package: 'N/A',
+                      icon: '🐳',
+                      value: 'Wraps agent terminal execution within gVisor microVMs and copy-on-write Docker containers, preventing host environment pollution.',
+                      howItRuns: 'Triggered automatically via shell scripts (sandbox-execute.sh, ci-verify.sh) whenever scripts are spawned by the gateway.',
+                      functions: 'Read-only base directory mounting, dynamic diff-patch generation, local CI/CD act emulation, and watcher synchronization.'
+                    }
+                  ].find(c => c.id === selectedArchComp);
+                  
+                  if (!comp) {
+                    return (
+                      <div className="arch-placeholder-view">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10"/>
+                          <line x1="12" y1="16" x2="12" y2="12"/>
+                          <line x1="12" y1="8" x2="12.01" y2="8"/>
+                        </svg>
+                        <p>Select a component on the left to inspect its architecture.</p>
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <>
+                      <div className="arch-detail-header">
+                        <div className="arch-detail-icon">{comp.icon}</div>
+                        <div className="arch-detail-title-block">
+                          <h3>{comp.name}</h3>
+                          <p>{comp.package !== 'N/A' ? `npm Workspace: ${comp.package}` : 'System Shell Integration'}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="arch-detail-section">
+                        <span className="arch-section-lbl">Purpose & Security Value</span>
+                        <p className="arch-section-val">{comp.value}</p>
+                      </div>
+                      
+                      <div className="arch-detail-section">
+                        <span className="arch-section-lbl">How It Runs</span>
+                        <p className="arch-section-val">{comp.howItRuns}</p>
+                      </div>
+                      
+                      <div className="arch-detail-section">
+                        <span className="arch-section-lbl">Key Capabilities & Functions</span>
+                        <p className="arch-section-code">{comp.functions}</p>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+        </section>
+
         {/* Embedded Secure Console Shell */}
         <section className="glass-panel terminal-window" style={{ marginTop: 0 }}>
           <div className="terminal-header">
@@ -1546,7 +2569,7 @@ export default function App() {
               <span className="terminal-dot dot-yellow"></span>
               <span className="terminal-dot dot-green"></span>
             </div>
-            <span className="terminal-title">Veritas Secure VM Sandbox Shell</span>
+            <span className="terminal-title">FidusGate Secure VM Sandbox Shell</span>
             <span className="terminal-badge">
               {activePlaybook ? 'RUNNING SIMULATION' : 'LIVE VM ACTIVE'}
             </span>
@@ -1557,7 +2580,7 @@ export default function App() {
               let color = '#d1d5db';
               if (line.startsWith('❌') || line.includes('SECURITY ERROR') || line.includes('failed')) {
                 color = 'hsl(var(--danger))';
-              } else if (line.startsWith('veritas-sandbox $') || line.includes('veritas-sandbox $')) {
+              } else if (line.startsWith('fidusgate-sandbox $') || line.includes('fidusgate-sandbox $')) {
                 color = '#ffaa00';
               } else if (line.startsWith('✅') || line.includes('Successfully') || line.includes('✓') || line.includes('ONLINE')) {
                 color = 'hsl(var(--success))';
@@ -1574,7 +2597,7 @@ export default function App() {
           </div>
           
           <form onSubmit={handleConsoleSubmit} className="console-input">
-            <span className="console-prompt">veritas-sandbox $</span>
+            <span className="console-prompt">fidusgate-sandbox $</span>
             <input 
               type="text" 
               className="console-field" 
@@ -1586,7 +2609,6 @@ export default function App() {
           </form>
         </section>
       </div>
-
     </div>
   );
 }

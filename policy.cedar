@@ -1,5 +1,5 @@
 // ==========================================
-// VeritasAudit Cedar Access-Control Policies
+// FidusGate Cedar Access-Control Policies
 // ==========================================
 // Evaluates AI Agent tool calls against strict, risk-tiered development rules.
 

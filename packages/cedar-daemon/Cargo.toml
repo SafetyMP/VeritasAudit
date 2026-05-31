@@ -2,7 +2,7 @@
 name = "cedar-daemon"
 version = "0.1.0"
 edition = "2021"
-description = "High-speed Rust-native Cedar Policy Verifier Daemon for VeritasAudit"
+description = "High-speed Rust-native Cedar Policy Verifier Daemon for FidusGate"
 
 [dependencies]
 tiny_http = "0.12"

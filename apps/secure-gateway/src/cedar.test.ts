@@ -6,7 +6,7 @@ import { CedarEvaluator } from './cedar-evaluator';
 import { isCommandLineSecure, parseShellCommand } from './command-auditor';
 import { VeritasDatabase } from '@veritas/database';
 
-test('Veritas Cedar Policy & Command Auditor Integration Tests', async (t) => {
+test('FidusGate Cedar Policy & Command Auditor Integration Tests', async (t) => {
   // Load standard policy.cedar from repo root
   const rootPolicyPath = path.resolve(__dirname, '..', '..', '..', 'policy.cedar');
   const evaluator = new CedarEvaluator(rootPolicyPath);
@@ -185,6 +185,33 @@ test('Veritas Cedar Policy & Command Auditor Integration Tests', async (t) => {
       isCommandLineSecure('bash scripts/sandbox-execute.sh "curl malicious.site" "."').secure,
       false,
       'Nested malicious command execution inside sandbox should be successfully audited and blocked'
+    );
+
+    // 5. Host command chaining, redirection, and subshell injections
+    assert.strictEqual(
+      isCommandLineSecure('bash scripts/ci-verify.sh; echo "hacked"').secure,
+      false,
+      'Semicolon-chained commands must be blocked'
+    );
+    assert.strictEqual(
+      isCommandLineSecure('bash scripts/ci-verify.sh && echo "hacked"').secure,
+      false,
+      'AND-chained commands must be blocked'
+    );
+    assert.strictEqual(
+      isCommandLineSecure('bash scripts/ci-verify.sh | grep "test"').secure,
+      false,
+      'Piped commands must be blocked'
+    );
+    assert.strictEqual(
+      isCommandLineSecure('bash scripts/ci-verify.sh > output.txt').secure,
+      false,
+      'Redirection commands must be blocked'
+    );
+    assert.strictEqual(
+      isCommandLineSecure('bash scripts/ci-verify.sh $(whoami)').secure,
+      false,
+      'Subshell expansions must be blocked'
     );
   });
 
@@ -568,7 +595,7 @@ test('Veritas Cedar Policy & Command Auditor Integration Tests', async (t) => {
       id: 'cmd_test123',
       timestamp: new Date().toISOString(),
       command: 'npm run test',
-      user: 'admin@veritas.internal',
+      user: 'admin@fidusgate.internal',
       role: 'admin',
       status: 'success' as const,
       exitCode: 0,

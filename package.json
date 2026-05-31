@@ -1,5 +1,5 @@
 {
-  "name": "veritasaudit-root",
+  "name": "fidusgate-root",
   "private": true,
   "engines": {
     "node": ">=20.0.0"

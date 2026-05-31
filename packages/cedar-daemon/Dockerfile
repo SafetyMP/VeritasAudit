@@ -13,8 +13,9 @@ FROM debian:bookworm-slim
 WORKDIR /app
 COPY --from=builder /usr/src/cedar-daemon/target/release/cedar-daemon /app/cedar-daemon
 
-# Copy policy.cedar from the workspace root context
+# Copy policy.cedar and policy.cedarschema from the workspace root context
 COPY policy.cedar /app/policy.cedar
+COPY policy.cedarschema /app/policy.cedarschema
 
 EXPOSE 50051
 CMD ["/app/cedar-daemon"]

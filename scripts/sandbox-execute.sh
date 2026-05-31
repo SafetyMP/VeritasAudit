@@ -27,13 +27,13 @@ if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
 fi
 
 # Determine the optimal Docker image based on the command content
-# Check if veritas-sandbox-node exists, compile if not
-if ! docker image inspect veritas-sandbox-node:latest >/dev/null 2>&1; then
-    echo "🐳 Compiling standardized veritas-sandbox-node:latest environment..."
-    docker build -t veritas-sandbox-node:latest -f scripts/sandbox/Dockerfile scripts/sandbox >/dev/null
+# Check if fidusgate-sandbox-node exists, compile if not
+if ! docker image inspect fidusgate-sandbox-node:latest >/dev/null 2>&1; then
+    echo "🐳 Compiling standardized fidusgate-sandbox-node:latest environment..."
+    docker build -t fidusgate-sandbox-node:latest -f scripts/sandbox/Dockerfile scripts/sandbox >/dev/null
 fi
 
-IMAGE="veritas-sandbox-node:latest"
+IMAGE="fidusgate-sandbox-node:latest"
 RUN_USER=""
 
 # Convert command to lowercase for matching
@@ -68,8 +68,14 @@ else
     echo "⚠️  gVisor (runsc) runtime not registered with Docker. Falling back to standard container namespaces."
 fi
 
+# Proactively ensure the memory folder exists on the host
+mkdir -p "$MOUNT_DIR/.memory"
+
+# Clear any previous pending patches
+rm -f "$MOUNT_DIR/.memory/pending-sandbox.patch"
+
 # Run compilation/tests inside isolated container
-# Mounts the target directory read-write, isolates network unless needed
+# Mounts primary workspace read-only, mounts .memory read-write
 USER_FLAG=""
 if [ -n "$RUN_USER" ]; then
     USER_FLAG="--user $RUN_USER"
@@ -77,34 +83,62 @@ fi
 
 docker run --name "$CONTAINER_NAME" \
   $RUNTIME_FLAG \
-  -v "$MOUNT_DIR:/workspace" \
-  -w /workspace \
+  -v "$MOUNT_DIR:/workspace:ro" \
+  -v "$MOUNT_DIR/.memory:/workspace-memory:rw" \
   --network none \
   --cap-drop=ALL \
   $USER_FLAG \
   "$IMAGE" \
-  sh -c "$COMMAND"
+  bash -c "
+    echo '🛡️  Preparing ephemeral copy-on-write workspace...' && \
+    mkdir -p /app && \
+    tar -cf - --exclude=node_modules --exclude=.git --exclude=.turbo -C /workspace . | tar -xf - -C /app && \
+    find /workspace -type d -name node_modules -prune 2>/dev/null | while read -r dir; do \
+      rel=\${dir#/workspace/}; \
+      mkdir -p \"/app/\${rel%/*}\" 2>/dev/null; \
+      ln -s \"\$dir\" \"/app/\$rel\" 2>/dev/null; \
+    done && \
+    cd /app && \
+    echo '🚀 Executing command in sandboxed environment...' && \
+    $COMMAND
+  "
 
 EXIT_CODE=$?
 
-# Extract the git diff patch safely from host if success
+# Extract the diff patch safely from within container if success
 if [ $EXIT_CODE -eq 0 ]; then
     echo "✅ Sandbox execution succeeded. Synthesizing safe git diff patch..."
-    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        git diff "$MOUNT_DIR" > "$TEMP_PATCH"
-        if [ -s "$TEMP_PATCH" ]; then
-            echo "💾 Saved diff patch to: $TEMP_PATCH"
-        else
-            echo "ℹ️  No file modifications detected."
-        fi
+    
+    # Generate the diff between the read-only /workspace and modified /app inside container
+    # Clean the path prefixes (/workspace/ -> a/ and /app/ -> b/) to make it standard git apply compatible
+    docker run --name "${CONTAINER_NAME}-diff" \
+      -v "$MOUNT_DIR:/workspace:ro" \
+      -v "$MOUNT_DIR/.memory:/workspace-memory:rw" \
+      --network none \
+      "$IMAGE" \
+      bash -c "
+        mkdir -p /app && \
+        tar -cf - --exclude=node_modules --exclude=.git --exclude=.turbo -C /workspace . | tar -xf - -C /app && \
+        cd /app && \
+        $COMMAND >/dev/null 2>&1 && \
+        diff -ruN --exclude=node_modules --exclude=.git --exclude=.turbo /workspace /app | \
+        sed 's|^\(--- \)/workspace/|\1a/|; s|^\(+++ \)/app/|\2b/|' \
+        > /workspace-memory/pending-sandbox.patch
+      " >/dev/null 2>&1
+      
+    docker rm "${CONTAINER_NAME}-diff" >/dev/null 2>&1
+
+    if [ -s "$MOUNT_DIR/.memory/pending-sandbox.patch" ]; then
+        echo "💾 Saved diff patch to: $MOUNT_DIR/.memory/pending-sandbox.patch"
     else
-        echo "ℹ️  Not inside a Git repository. Skipping diff patch generation."
+        echo "ℹ️  No file modifications detected."
+        rm -f "$MOUNT_DIR/.memory/pending-sandbox.patch"
     fi
 else
-    echo "❌ Sandbox execution failed with exit code $EXIT_CODE. Aborting integration."
+    echo "❌ Sandbox execution failed with exit code $EXIT_CODE. Workspace changes discarded."
 fi
 
-# Cleanup container
+# Cleanup execution container
 docker rm "$CONTAINER_NAME" >/dev/null 2>&1
 
 exit $EXIT_CODE

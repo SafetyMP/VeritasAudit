@@ -4,10 +4,10 @@
   "private": true,
   "description": "Integration stub for high-speed Rust-native Cedar daemon",
   "scripts": {
-    "build": "docker build -t veritas-cedar-daemon -f Dockerfile ../..",
-    "prestart": "docker rm -f veritas-cedar-daemon 2>/dev/null || true",
-    "start": "docker run -d --name veritas-cedar-daemon -p 50051:50051 veritas-cedar-daemon",
-    "stop": "docker rm -f veritas-cedar-daemon 2>/dev/null || true",
+    "build": "docker build -t fidusgate-cedar-daemon -f Dockerfile ../..",
+    "prestart": "docker rm -f fidusgate-cedar-daemon 2>/dev/null || true",
+    "start": "docker run -d --name fidusgate-cedar-daemon -p 50051:50051 fidusgate-cedar-daemon",
+    "stop": "docker rm -f fidusgate-cedar-daemon 2>/dev/null || true",
     "test": "echo '📡 Rust tests bypassed'",
     "lint": "echo '📡 Rust linter bypassed'"
   }

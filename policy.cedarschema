@@ -1,0 +1,42 @@
+// ==========================================
+// VeritasAudit Cedar Schema Definitions
+// ==========================================
+// Formally maps AI agent tool call arguments and stateful compliance gate types.
+
+entity User;
+
+entity Tool {
+    tool_name: String,
+    args: {
+        path: String,
+        commandLine: String
+    }
+};
+
+action "call_tool" appliesTo {
+    principal: User,
+    resource: Tool,
+    context: {
+        path: String,
+        commandLine: String,
+        devops: {
+            pipeline_passed: Bool,
+            security_audited: Bool,
+            ham_drift_checked: Bool
+        },
+        ibp: {
+            cross_functional_synthesized: Bool,
+            budget_aligned: Bool
+        },
+        plm: {
+            active_requirement_id: String,
+            associated_tests_written: Bool,
+            has_api_drift: Bool,
+            drift_verified: Bool,
+            release_version_updated: Bool,
+            changelog_updated: Bool,
+            has_active_feedback: Bool,
+            feedback_aligned: Bool
+        }
+    }
+};

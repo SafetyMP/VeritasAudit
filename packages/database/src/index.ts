@@ -139,13 +139,13 @@ export class VeritasDatabase {
       try {
         this.prisma = new PrismaClient();
         this.usePostgres = true;
-        console.log('📡 VeritasDatabase: Relational PostgreSQL mode enabled via Prisma ORM.');
+        console.log('📡 FidusGateDatabase: Relational PostgreSQL mode enabled via Prisma ORM.');
       } catch (e: any) {
-        console.warn('⚠️  VeritasDatabase: Failed to initialize Prisma client, falling back to JSON mock files:', e.message);
+        console.warn('⚠️  FidusGateDatabase: Failed to initialize Prisma client, falling back to JSON mock files:', e.message);
         this.usePostgres = false;
       }
     } else {
-      console.log('💾 VeritasDatabase: Running in zero-dependency local JSON file store mode.');
+      console.log('💾 FidusGateDatabase: Running in zero-dependency local JSON file store mode.');
     }
   }
 
