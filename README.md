@@ -1,10 +1,10 @@
 # ⚖️ FidusGate
 
-### Cryptographically Verified, Self-Governing AI DevSecOps Governance Platform
+### Open-Source, Evergreen Zero-Trust Governance & Runtime Verification Platform for AI Agents
 
-FidusGate is an enterprise-grade, zero-trust repository repository governance and runtime verification framework specifically engineered for **Autonomous AI-Agent Operations**. It shifts security left, enforcing real-time programmatic access controls, deterministic signature verification, and automated static security analysis on agentic workflows.
+FidusGate is an **open-source, evergreen project of capability** representing the state-of-the-art in zero-trust repository governance and runtime verification for **Autonomous AI-Agent Operations**. Unlike theoretical models or static mockups, FidusGate provides a fully realized, live operational blueprint that shifts security left—enforcing programmatic access controls, deterministic signature verification, and automated kernel-level auditing directly on active agentic workflows.
 
-Designed with a **risk-centric architecture**, FidusGate establishes mathematically verifiable boundaries around AI tool execution, preventing unauthorized environment modifications, privilege escalation, and prompt-injection-driven system compromise.
+Designed with an extensible, **risk-centric architecture**, FidusGate establishes mathematically verifiable boundaries around AI tool execution, serving as a robust standard of capability in the industry for preventing unauthorized system modifications, privilege escalation, and prompt-injection-driven compromise.
 
 ---
 
@@ -273,6 +273,16 @@ While FidusGate is designed to scaffold zero-trust structures with local configu
 The `protect-mcp.config.json` governs the gateway runtime enforcement behavior via the `"mode"` key:
 * `"shadow"`: Evaluates all incoming transaction requests against Cedar access-control rules and logs the decisions, but does not block requests. This is useful for auditing and testing policies against real-world developer workflows before enforcement.
 * `"enforce"`: Full zero-trust active gatekeeping. The secure-gateway actively blocks any tool execution, receipt submission, or console command that fails Ed25519 cryptographic validation or evaluates to `"deny"` under Cedar access controls.
+
+---
+
+## 🌿 An Evergreen Open-Source Standard
+
+FidusGate is designed not merely as a fixed utility, but as an **evergreen, evolving standard of capability** for AI system security. As the AI and autonomous agent landscape transitions through rapid advancements, FidusGate’s architecture remains continuously aligned, serving as a functional reference for both security teams and platform engineers:
+
+*   **Continuous Evolutionary Delivery:** Fully governed by conventional commits and automated pipelines, ensuring that the latest security signatures, Cedar rules, and seccomp mappings compile, version, and tag autonomously.
+*   **A Standard of Real-World Capability:** By shipping direct integrations—including live sandbox microVM command runners, dynamic AST policy simulations, cryptographic transaction hash chaining, and real-time eBPF-inspired system call logs—FidusGate establishes a living, functional benchmark. It moves the industry past theoretical policy PDFs into **mathematically and operationally verified runtime enforcement**.
+*   **Open-Source and Extensible Core:** The modular npm workspace monorepo is engineered for seamless community-driven expansion. Security architects can easily write new custom playbooks under the `skills/` tree, deploy specialized authentication mechanisms via our federated OIDC provider hooks, or plug in advanced LLM-based firewalls to evaluate adversarial prompt cosine similarities.
 
 ---
 

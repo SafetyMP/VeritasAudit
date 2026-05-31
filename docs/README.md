@@ -1,6 +1,6 @@
 # ⚖️ FidusGate Documentation & Playbooks Portal
 
-Welcome to the FidusGate engineering and governance documentation portal. This directory contains detailed architectural specifications, continuous delivery manuals, walkthrough verification guides, and our risk-centric **SME Playbooks** defining autonomous agent boundaries.
+Welcome to the FidusGate documentation and playbooks portal. This open-source repository serves as an **evergreen standard of capability** for AI DevSecOps governance. The portal provides detailed architectural specifications, continuous delivery manuals, walkthrough verification guides, and domain-scoped **SME Playbooks** defining mathematically auditable boundaries for autonomous agents.
 
 ---
 
