@@ -85,6 +85,16 @@ Added as a widescreen sidebar console inside the **Cedar Policy Tab**:
 ### 📊 OpenTelemetry Telemetry Cards
 Added a dedicated OTel Latency & Rate Tracing card displaying micro-sparkline metrics that reflect real-time active or flatlined statistics based on circuit breaker states.
 
+### 🔑 4.5. Multi-Role MuSig2 Attestation & Execution Bypass (Phase 4)
+* **Cryptographic Attestation & Proposer Block:** Implemented strict Zero-Trust consensus controls preventing the proposer of a command from self-attesting. The "Attest & Sign" button displays an **"Initiator Blocked"** badge if the logged-in user email matches the action's proposer.
+* **Approved Command Terminal Bypass:** Added a bypass routing mechanism in `/api/sandbox/execute` that verifies approved cryptographic actions in the database. Running the exact pre-approved command in the Sandbox Console skips the standard allowlist block, executes inside the MicroVM container, and flags the action as completed.
+* **Auditor Role & OIDC Widget Support:** Upgraded the federated OIDC authentication portal to dynamically align default identity emails (e.g. `auditor@fidusgate.internal`) based on role buttons, preventing authentication transaction rejections.
+
+### 📡 4.6. eBPF System Call Monitor & Adaptive Auto-Throttling (Phase 5)
+* **Live System Call Auditing:** Wired an eBPF-inspired system call analyzer inside the Sandbox engine, tracing low-level calls (`sys_execve`, `sys_openat`, `sys_read`, `sys_unlinkat`, `sys_fchmodat`).
+* **Dynamic seccomp Logs:** Linked the frontend console with the live audited `syscalls` array using React state hooks. The eBPF panel maps over these live system call events, showing real-time `ALLOWED`/`BLOCKED` seccomp logs and violation lockouts.
+* **macOS Sandbox & Auto-Throttling Compatibility:** Added macOS compatibility wrappers for `timeout` execution inside the microVM, and raised the Auto-Throttle moving average threshold to `2000ms` to prevent standard Docker container startup latencies from triggering throttle blocks.
+
 ---
 
 ## 🧪 5. Automated Verification Results
@@ -107,35 +117,58 @@ npm run test
   ✔ Reject verification when verifying with a mismatched public key (0.48ms)
   ✔ Gracefully handle and reject entirely corrupt/malformed signature string formats (0.31ms)
   ✔ Successful attested ephemeral session key sign-and-verify cycle (1.65ms)
-✔ Ed25519 Public-Key Cryptography Tests (8.98ms)
+✔ Ed25519 Public-Key Cryptography Tests (12.58ms)
 ℹ tests 7 | pass 7 | fail 0
 
 ▶ FidusGate Cedar Policy & Command Auditor Integration Tests
-  ✔ Parser Bootstrapping (0.64ms)
+  ✔ Parser Bootstrapping (0.53ms)
   ✔ Tier 1: Low Risk - Read-Only tools should be permitted globally (0.33ms)
-  ✔ Tier 2: Medium Risk - File modifications permitted inside source directories (0.34ms)
-  ✔ Tier 2: Medium Risk - File modifications FORBIDDEN on sensitive configurations (0.11ms)
-  ✔ Tier 3: High Risk - Command execution permitted inside sandbox (0.20ms)
-  ✔ Tier 3: High Risk - Raw direct host command execution must be FORBIDDEN (0.09ms)
-  ✔ Tier 4: Critical Risk - Network download and package installs blocked (0.10ms)
-  ✔ Command Line Auditor - Parse shell command arguments securely (0.82ms)
-  ✔ Command Line Auditor - Verify allowed commands under allowlist schemas (0.28ms)
-  ✔ Command Line Auditor - Intercept and block command-matching bypass attempts (0.17ms)
-  ✔ Tier 5: DevOps Stateful Compliance Verification (0.13ms)
+  ✔ Tier 2: Medium Risk - File modifications permitted inside source directories (0.35ms)
+  ✔ Tier 2: Medium Risk - File modifications FORBIDDEN on sensitive configurations or policy files (0.12ms)
+  ✔ Tier 3: High Risk - Command execution permitted inside sandbox or local CI scripts (0.21ms)
+  ✔ Tier 3: High Risk - Raw direct host command execution must be FORBIDDEN (0.10ms)
+  ✔ Tier 4: Critical Risk - Network download and custom package install commands must be blocked (0.11ms)
+  ✔ Command Line Auditor - Parse shell command arguments securely (0.86ms)
+  ✔ Command Line Auditor - Verify allowed commands under allowlist schemas (0.31ms)
+  ✔ Command Line Auditor - Intercept and block command-matching bypass attempts (0.18ms)
+  ✔ Tier 5: DevOps Stateful Compliance Verification (0.14ms)
   ✔ Tier 6: Integrated Business Planning (IBP) Stateful Gates (0.15ms)
-  ✔ Tier 7: Product Lifecycle Management (PLM) Gates (0.33ms)
-  ✔ Tier 8: Cryptographic SME Role Gating Gates (0.27ms)
-  ✔ Forensic Logs - Database persistence and retrieval (2.56ms)
-  ✔ Multi-Agent Consensus Gating - PostgreSQL State Persistence (1.33ms)
-  ✔ Ephemeral Session Keyrings - Verification Attestation (3.36ms)
-  ✔ Filesystem Drift Logging & Database Persistence (2.17ms)
-  ✔ Filesystem Drift Active Reconciliation (2.51ms)
+  ✔ Tier 7: Product Lifecycle Management (PLM) Gates (0.34ms)
+  ✔ Tier 8: Cryptographic SME Role Gating Gates (0.36ms)
+  ✔ Forensic Logs - Database persistence and retrieval (3.55ms)
+  ✔ Multi-Agent Consensus Gating - PostgreSQL State Persistence (1.89ms)
+  ✔ Ephemeral Session Keyrings - Verification Attestation (4.10ms)
+  ✔ Filesystem Drift Logging & Database Persistence (2.55ms)
+  ✔ Filesystem Drift Active Reconciliation (2.85ms)
   ✔ Gemini Policy Co-Pilot Mock Fallback Engine (0.11ms)
-✔ FidusGate Cedar Policy & Command Auditor Integration Tests (19.12ms)
-ℹ tests 21 | pass 21 | fail 0
+  ✔ Phase 3: Stateful Expiration Cron Worker & Expiry (2.97ms)
+  ▶ Phase 4: Advanced AI Governance & Self-Healing Integration
+    ✔ Prompt Firewall - Malicious injection attempts blocked (0.66ms)
+    ✔ Consensus Auditor - Command classification rules (0.48ms)
+    ✔ Consensus Gating - Admin Override of Dangerous Action (2.39ms)
+  ✔ Phase 4: Advanced AI Governance & Self-Healing Integration (3.75ms)
+  ▶ Phase 5: eBPF System Call Auditor
+    ✔ Should allow safe commands through kernel auditor (0.31ms)
+    ✔ Should block sys_ptrace jailbreak attempts (0.11ms)
+    ✔ Should block outbound socket connections (curl, wget, ssh) (0.31ms)
+    ✔ Should block namespace escape attempts (setns, unshare) (0.09ms)
+  ✔ Phase 5: eBPF System Call Auditor (1.05ms)
+  ▶ Phase 5: Cosine Vector Similarity Firewall
+    ✔ Should pass normal non-adversarial prompts (0.24ms)
+    ✔ Should block prompts with high adversarial cosine similarity (0.11ms)
+    ✔ Should return similarity scores for all prompts (0.07ms)
+  ✔ Phase 5: Cosine Vector Similarity Firewall (0.54ms)
+  ▶ Phase 5: MuSig2 Consensus Threshold Verification
+    ✔ Dangerous commands should require 3 attestation keys (0.06ms)
+    ✔ Safe commands should require 2 attestation keys (0.10ms)
+    ✔ Suspicious commands should require 2 attestation keys (0.05ms)
+    ✔ 15-minute lockout constant should be correct (0.04ms)
+  ✔ Phase 5: MuSig2 Consensus Threshold Verification (0.39ms)
+✔ FidusGate Cedar Policy & Command Auditor Integration Tests (31.32ms)
+ℹ tests 40 | pass 40 | fail 0
 ```
 
-**Result:** **100% SUCCESS.** All core packages compile seamlessly, and all cryptographic and behavioral integration tests pass.
+**Result:** **100% SUCCESS.** All core packages compile seamlessly, and all cryptographic, consensus, and system-level behavioral integration tests pass.
 
 ---
 

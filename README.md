@@ -158,6 +158,22 @@ FidusGate includes a robust, high-performance suite of SecOps observability and 
 * **Gemini-1.5-Pro API Integration:** Leverages the official Google Gemini API (with `gemini-1.5-pro` model) to interpret user intent, generating a syntactically correct Cedar authorization rule and a concise plain-English explanation returned as JSON.
 * **Resilient Mock Fallback Engine:** Implements a robust rule-based mock parser that handles key policies (for roles like `pm-sme` and `security-sme`) when `GEMINI_API_KEY` is not set, providing robust fail-safes during offline development.
 
+### 🔑 7. Multi-Role MuSig2 Attestation & Execution Bypass (Phase 4)
+* **Cryptographic Attestation Gating:** Suspending raw terminal execution of high-risk shell commands until approved by consensus. Attestations are securely signed using multi-role consensus keys (Admin, Developer, Auditor).
+* **Initiator Self-Attestation Block:** Programmatically prevents the proposer of a command from signing off on their own action (satisfying strict Zero-Trust compliance standards and Separation of Duties).
+* **Consensus Bypass Execution:** Added a bypass interceptor in `/api/sandbox/execute` that verifies approved cryptographic actions in the database. When the identical command is run in the Sandbox Console, FidusGate automatically bypasses standard allowlist blocks, runs the task in the microVM container, and marks the action status as `completed`.
+* **Auditor Role & OIDC Widget Support:** Enhanced the federated authentication widget with specialized OIDC identity routers, aligning default emails based on the selected role button to eliminate authentication failures while maintaining custom SRE address typing.
+
+### 📡 8. Live eBPF-Inspired Kernel System Call Monitor (Phase 5)
+* **Real-time Seccomp Auditing:** Direct integration of low-level kernel auditing on the Secure Gateway. Parses command blocks to trace expected system call flows (`sys_execve`, `sys_openat`, `sys_read`, `sys_unlinkat`, `sys_fchmodat`).
+* **Seccomp Violation Lockouts:** Triggers a strict 15-minute system execution lockout whenever critical system calls are detected (`sys_ptrace` for jail injections, `sys_setns`/`sys_unshare` for namespace escapes, or unauthorized outbound socket calls).
+* **Dynamic Frontend React Integration:** Wired the audited `syscalls` array returned by sandbox execution REST calls into a dynamic React state hook. The eBPF monitor panel renders live ALLOWED and BLOCKED seccomp logs with visual indicators and violation reasons in real-time.
+
+### ⚡ 9. Adaptive Auto-Throttling & macOS Sandbox Compatibility (Phase 5)
+* **Intelligent Auto-Throttling:** Implemented a moving-average latency tracker that triggers defensive rate-limiting (HTTP 429) when average sandbox execution times spike. Configured with a `2000ms` window to prevent standard Docker container startup overheads from causing throttle locks.
+* **macOS `timeout` Fallback Wrapper:** Built a dynamic bash helper inside `sandbox-execute.sh` that detects if the standard `timeout` utility is missing (common on default macOS). It gracefully routes to `gtimeout` (if installed via coreutils) or direct execution, resolving Docker execution environment lockups.
+* **Unified State Reset:** Configured the database `/api/reset` handler to atomically clear the moving latency average alongside compliance states, instantly unlocking active throttling parameters.
+
 ---
 
 
