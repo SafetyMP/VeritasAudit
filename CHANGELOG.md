@@ -1,0 +1,22 @@
+# [1.1.0](https://github.com/SafetyMP/FidusGate/compare/v1.0.0...v1.1.0) (2026-05-31)
+
+
+### Bug Fixes
+
+* resolve YAML indentation syntax errors in release workflow ([239c41c](https://github.com/SafetyMP/FidusGate/commit/239c41c3b130f94f0c58be11c706880d6958375a))
+
+
+### Features
+
+* add interactive utility to purge legacy Veritas container packages from GHCR ([cabc875](https://github.com/SafetyMP/FidusGate/commit/cabc875cbd1a3d201df5abfc22f8401c0765eff0))
+* complete FidusGate rebranding, interactive guide layout polish, and premium features integration ([b39961f](https://github.com/SafetyMP/FidusGate/commit/b39961fa0902f553c448fc069ac512c192b10b7d))
+* **dashboard:** Refactor operations dashboard layout into glassmorphic tabs ([c3d2beb](https://github.com/SafetyMP/FidusGate/commit/c3d2beba229657afcf152476c5970f17a9012643))
+* **database:** integrate PostgreSQL persistence using Prisma ORM and Docker ([4516162](https://github.com/SafetyMP/FidusGate/commit/451616274b3db39622e2f3a0bc0f8d7bb5b7fdbd))
+* implement combined dev queue (dynamic PLM UI panel, Prometheus metrics API, and forensic command logs database) ([d50fdc7](https://github.com/SafetyMP/FidusGate/commit/d50fdc70cfee50218df3da96ff4afd347cb422c6))
+* implement dynamic TS Cedar Policy Engine, tokenized Command Auditor, native tests, and enforce-mode default ([ba7d669](https://github.com/SafetyMP/FidusGate/commit/ba7d66930a94fea15a9452b5380a2322358fe6f1))
+* implement native SRE telemetry exporter, policy hot-reloader, process kill-switches, and model context protocol proxy ([a0acc4d](https://github.com/SafetyMP/FidusGate/commit/a0acc4de679051f7ea830e992ed5cd42038f7ab0))
+* implement stateful PLM feedback loop, scenario modeling & SME playbooks ([9a80538](https://github.com/SafetyMP/FidusGate/commit/9a80538d3715dc882b1b56ed86faafff0564db8f))
+* migrate monorepo packages, dependencies, and imports to [@fidusgate](https://github.com/fidusgate) scope ([87476ec](https://github.com/SafetyMP/FidusGate/commit/87476ec8e2822cf3e44290eeb9ab25bfc63aa774))
+* **secops:** Implement dynamic WebSockets, forensic search filters, cryptographic report exports, and agent circuit breakers ([b8c6f8f](https://github.com/SafetyMP/FidusGate/commit/b8c6f8f12e82b51817f8bfe44f78987a440878bb))
+* **secops:** implement FidusGate Enterprise Phase 2 features ([566a18d](https://github.com/SafetyMP/FidusGate/commit/566a18df9daebeaba77292decfeb845db2951083))
+* **secops:** implement Phase 3 Active Filesystem Drift Auto-Reconciliation and Gemini-Powered Cedar Co-Pilot ([9282085](https://github.com/SafetyMP/FidusGate/commit/9282085e7a237029ab3ae92c692281922cfb284f))
