@@ -14,11 +14,21 @@ export interface CommandLogEntry {
   cedarDecision: 'allow' | 'deny';
 }
 
+export interface FilesystemDriftEntry {
+  id: string;
+  timestamp: string;
+  filePath: string;
+  changeType: string;
+  diff?: string | null;
+  reconciled: boolean;
+}
+
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const TX_FILE = path.join(DATA_DIR, 'transactions.json');
 const RECEIPTS_FILE = path.join(DATA_DIR, 'receipts.json');
 const FINDINGS_FILE = path.join(DATA_DIR, 'findings.json');
 const COMMAND_LOGS_FILE = path.join(DATA_DIR, 'command-logs.json');
+const DRIFTS_FILE = path.join(DATA_DIR, 'drifts.json');
 
 // POSIX-compliant atomic file writer helper to prevent JSON database file corruption
 function writeJsonAtomic(filePath: string, data: any) {
@@ -172,6 +182,10 @@ export class FidusGateDatabase {
 
     if (!fs.existsSync(COMMAND_LOGS_FILE)) {
       writeJsonAtomic(COMMAND_LOGS_FILE, []);
+    }
+
+    if (!fs.existsSync(DRIFTS_FILE)) {
+      writeJsonAtomic(DRIFTS_FILE, []);
     }
   }
 
@@ -466,6 +480,99 @@ export class FidusGateDatabase {
     writeJsonAtomic(COMMAND_LOGS_FILE, list);
   }
 
+  // ==========================================
+  // Filesystem Drift Management
+  // ==========================================
+  private getDriftsJson(): FilesystemDriftEntry[] {
+    this.ensureInitialized();
+    try {
+      const data = fs.readFileSync(DRIFTS_FILE, 'utf-8');
+      return JSON.parse(data);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  public async getDrifts(): Promise<FilesystemDriftEntry[]> {
+    if (this.usePostgres && this.prisma) {
+      try {
+        const drifts = await this.prisma.filesystemDrift.findMany({
+          orderBy: { timestamp: 'desc' }
+        });
+        return drifts.map(d => ({
+          id: d.id,
+          timestamp: d.timestamp.toISOString(),
+          filePath: d.filePath,
+          changeType: d.changeType,
+          diff: d.diff,
+          reconciled: d.reconciled
+        }));
+      } catch (err: any) {
+        console.warn('⚠️  Prisma FilesystemDrift query failed, falling back to JSON storage:', err.message);
+      }
+    }
+    return this.getDriftsJson();
+  }
+
+  public async addDrift(drift: Omit<FilesystemDriftEntry, 'id' | 'timestamp' | 'reconciled'>): Promise<FilesystemDriftEntry> {
+    const newEntry: FilesystemDriftEntry = {
+      id: `drift_${Math.floor(100000 + Math.random() * 900000)}`,
+      timestamp: new Date().toISOString(),
+      filePath: drift.filePath,
+      changeType: drift.changeType,
+      diff: drift.diff || null,
+      reconciled: false
+    };
+
+    if (this.usePostgres && this.prisma) {
+      try {
+        const d = await this.prisma.filesystemDrift.create({
+          data: {
+            id: newEntry.id,
+            timestamp: new Date(newEntry.timestamp),
+            filePath: newEntry.filePath,
+            changeType: newEntry.changeType,
+            diff: newEntry.diff,
+            reconciled: false
+          }
+        });
+        return {
+          id: d.id,
+          timestamp: d.timestamp.toISOString(),
+          filePath: d.filePath,
+          changeType: d.changeType,
+          diff: d.diff,
+          reconciled: d.reconciled
+        };
+      } catch (err: any) {
+        console.warn('⚠️  Prisma FilesystemDrift insertion failed, falling back to JSON storage:', err.message);
+      }
+    }
+
+    const list = this.getDriftsJson();
+    list.unshift(newEntry);
+    writeJsonAtomic(DRIFTS_FILE, list);
+    return newEntry;
+  }
+
+  public async reconcileDrifts(): Promise<void> {
+    if (this.usePostgres && this.prisma) {
+      try {
+        await this.prisma.filesystemDrift.updateMany({
+          where: { reconciled: false },
+          data: { reconciled: true }
+        });
+        return;
+      } catch (err: any) {
+        console.warn('⚠️  Prisma FilesystemDrift reconciliation update failed, falling back to JSON storage:', err.message);
+      }
+    }
+
+    const list = this.getDriftsJson();
+    const updated = list.map(d => ({ ...d, reconciled: true }));
+    writeJsonAtomic(DRIFTS_FILE, updated);
+  }
+
   public async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; latencyMs: number; error?: string }> {
     if (!this.usePostgres || !this.prisma) {
       return { status: 'healthy', latencyMs: 0 };
@@ -490,6 +597,7 @@ export class FidusGateDatabase {
     if (this.usePostgres && this.prisma) {
       try {
         await this.prisma.$transaction([
+          this.prisma.filesystemDrift.deleteMany(),
           this.prisma.consensusApproval.deleteMany(),
           this.prisma.pendingAction.deleteMany(),
           this.prisma.transaction.deleteMany(),
@@ -508,5 +616,6 @@ export class FidusGateDatabase {
     writeJsonAtomic(RECEIPTS_FILE, INITIAL_RECEIPTS);
     writeJsonAtomic(FINDINGS_FILE, []);
     writeJsonAtomic(COMMAND_LOGS_FILE, []);
+    writeJsonAtomic(DRIFTS_FILE, []);
   }
 }

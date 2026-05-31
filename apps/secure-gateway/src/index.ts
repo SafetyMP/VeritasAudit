@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import { execSync } from 'node:child_process';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { FidusGateDatabase, CommandLogEntry } from '@fidusgate/database';
+import { FidusGateDatabase, CommandLogEntry, FilesystemDriftEntry } from '@fidusgate/database';
 import * as http from 'node:http';
 import { verifyReceipt, generateKeyPair, createAttestedSession } from '@fidusgate/crypto-utils';
 import { startMcpServer } from './mcp-server';
@@ -1283,6 +1283,9 @@ app.post('/api/sandbox/execute', requireAuth(['admin', 'developer']), async (req
           cedarDecision: 'allow'
         });
 
+        // Run drift detection
+        await detectFilesystemDrift(workspacePath);
+
         res.json({ logs, status: 'success' });
       } catch (error: any) {
         log('error', `Web console command execution failed`, error.message);
@@ -1300,6 +1303,9 @@ app.post('/api/sandbox/execute', requireAuth(['admin', 'developer']), async (req
           exitCode,
           cedarDecision: 'allow'
         });
+
+        // Run drift detection
+        await detectFilesystemDrift(workspacePath);
 
         res.status(500).json({ error: 'Sandboxed execution failed', logs: errorLogs, status: 'failed' });
       }
@@ -1828,6 +1834,198 @@ app.post('/api/sandbox/drift-sync', requireAuth(['developer', 'admin']), (req, r
     }
   } catch (err: any) {
     res.status(500).json({ error: 'Drift sync exception occurred', message: err.message });
+  }
+});
+
+// ==========================================
+// Filesystem Drift Auto-Reconciliation Helpers & Endpoints
+// ==========================================
+
+async function detectFilesystemDrift(workspacePath: string) {
+  try {
+    const driftDetectCmd = `bash scripts/sandbox-drift-detect.sh "${workspacePath}"`;
+    const driftOutput = execSync(driftDetectCmd, { cwd: workspacePath, encoding: 'utf8' });
+    const driftLines = driftOutput.split('\n').map(l => l.trim()).filter(Boolean);
+    for (const line of driftLines) {
+      // Format of git status porcelain lines: " M path" or "?? path" or " D path"
+      // e.g. "??" or "M" or "D" or " M" or " D"
+      const match = line.match(/^([MAD?]{1,2})\s+(.+)$/);
+      if (match) {
+        const code = match[1];
+        const filePath = match[2];
+        let changeType = 'modified';
+        if (code === '??' || code.includes('A')) {
+          changeType = 'added';
+        } else if (code.includes('D')) {
+          changeType = 'deleted';
+        }
+        
+        // Compute basic diff if changeType is 'modified'
+        let diff: string | null = null;
+        if (changeType === 'modified') {
+          try {
+            diff = execSync(`git diff "${filePath}"`, { cwd: workspacePath, encoding: 'utf8' });
+          } catch (diffErr: any) {
+            log('error', `Failed to compute diff for ${filePath}: ${diffErr.message}`);
+          }
+        }
+
+        // Add to DB
+        const driftRecord = await db.addDrift({
+          filePath,
+          changeType,
+          diff
+        });
+
+        // Broadcast to WebSocket clients
+        broadcastWS('filesystem_drift_detected', driftRecord);
+      }
+    }
+  } catch (err: any) {
+    log('error', 'Failed to run filesystem drift detection:', err.message);
+  }
+}
+
+// GET /api/sandbox/drift-logs - Retrieve stateful filesystem drift records
+app.get('/api/sandbox/drift-logs', requireAuth(['developer', 'admin', 'auditor']), async (req, res) => {
+  try {
+    const list = await db.getDrifts();
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to retrieve drift logs', message: err.message });
+  }
+});
+
+// POST /api/sandbox/reconcile - Active rollbacks using git clean & restore
+app.post('/api/sandbox/reconcile', requireAuth(['admin']), async (req, res) => {
+  try {
+    const workspaceRoot = process.cwd();
+    log('info', '🛡️ RECONCILIATION INITIATED: Reverting all untracked and modified workspace filesystem changes.');
+    
+    // Execute active rollback commands
+    try {
+      execSync('git restore . && git clean -fd', { cwd: workspaceRoot });
+      log('info', 'Reconciliation successful: workspace returned to clean git state.');
+      
+      // Update DB to mark all records as reconciled
+      await db.reconcileDrifts();
+
+      // Broadcast event so UI clears alerts
+      broadcastWS('filesystem_reconciled', { reconciled: true });
+
+      res.json({ message: 'Filesystem successfully reconciled. All drift reverted.', reconciled: true });
+    } catch (execErr: any) {
+      log('error', 'Reconciliation command failed:', execErr.message);
+      res.status(500).json({ error: 'Failed to reconcile sandbox filesystem', message: execErr.message });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: 'Reconciliation exception occurred', message: err.message });
+  }
+});
+
+// ==========================================
+// Gemini Cedar Policy Co-Pilot Endpoints & Helpers
+// ==========================================
+
+const CO_PILOT_SYSTEM_PROMPT = `You are FidusGate's Cedar Policy Co-Pilot. Your job is to translate a natural language rule request into a syntactically correct Cedar policy and a plain explanation.
+Output a JSON object with two fields:
+1. "cedarCode": A string containing the exact syntactically valid Cedar policy.
+2. "explanation": A concise plain-English explanation of what the policy does and why it was constructed this way.
+
+Rules about Cedar policy:
+- Principals are typically structured like: sb:issuer::"username" or sb:issuer::"developer" or sb:issuer::"admin" or sb:issuer::"pm-sme" or sb:issuer::"security-sme".
+- Actions are Action::"read_file", Action::"write_file", Action::"execute_command", etc.
+- Resource is typically resource.
+- Conditions use when { ... } or unless { ... }.
+- File path checks use resource.path.endsWith(".md") or resource.path.startsWith("src/").
+
+Example of expected JSON output:
+{
+  "cedarCode": "permit(principal == sb:issuer::\\\"pm-sme\\\", action == Action::\\\"write_file\\\", resource) when { resource.path.endsWith(\\\".md\\\") };",
+  "explanation": "Allows pm-sme principal to write files only if the file path ends with a .md extension."
+}
+
+Do not include any markdown backticks, comments, or extra text. Output ONLY the raw JSON object.`;
+
+function generateMockCedarPolicy(prompt: string): { cedarCode: string; explanation: string } {
+  const lowerPrompt = prompt.toLowerCase();
+  
+  if (lowerPrompt.includes('pm-sme') || lowerPrompt.includes('pm')) {
+    return {
+      cedarCode: `permit(principal == sb:issuer::"pm-sme", action == Action::"write_file", resource) when { resource.path.endsWith(".md") };`,
+      explanation: "Fallback Mock: Allows pm-sme principal to write files only if the file path ends with a .md extension."
+    };
+  }
+  
+  if (lowerPrompt.includes('security-sme') || lowerPrompt.includes('security')) {
+    return {
+      cedarCode: `permit(principal == sb:issuer::"security-sme", action in [Action::"read_file", Action::"write_file"], resource) when { resource.path.startsWith("policy") };`,
+      explanation: "Fallback Mock: Permits security-sme to modify or read policy-related files."
+    };
+  }
+
+  // General fallback
+  return {
+    cedarCode: `permit(principal == sb:issuer::"developer", action == Action::"read_file", resource);`,
+    explanation: "Fallback Mock: Permits developers to read files across the workspace."
+  };
+}
+
+// POST /api/policy/co-pilot - Translate conversational request into Cedar Policy using Google Gemini API
+app.post('/api/policy/co-pilot', requireAuth(['developer', 'admin']), async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    if (!prompt) {
+      res.status(400).json({ error: 'Missing required parameter: prompt' });
+      return;
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      log('warn', 'GEMINI_API_KEY is not configured. Falling back to rule-based mock engine.');
+      const mockResult = generateMockCedarPolicy(prompt);
+      res.json(mockResult);
+      return;
+    }
+
+    try {
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=' + apiKey, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: CO_PILOT_SYSTEM_PROMPT + '\n\nUser prompt: "' + prompt + '"' }]
+            }
+          ],
+          generationConfig: {
+            responseMimeType: "application/json"
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Gemini API returned status code ' + response.status);
+      }
+
+      const responseData = await response.json() as any;
+      const jsonText = responseData?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!jsonText) {
+        throw new Error('Empty response from Gemini API');
+      }
+
+      const result = JSON.parse(jsonText.trim());
+      res.json(result);
+    } catch (apiErr: any) {
+      log('error', 'Failed to contact Gemini API: ' + apiErr.message + '. Falling back to rule-based mock engine.');
+      const mockResult = generateMockCedarPolicy(prompt);
+      res.json({
+        ...mockResult,
+        explanation: mockResult.explanation + ' (Gemini fallback active: ' + apiErr.message + ')'
+      });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: 'Co-Pilot execution exception occurred', message: err.message });
   }
 });
 

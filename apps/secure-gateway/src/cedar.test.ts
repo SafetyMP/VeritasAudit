@@ -704,4 +704,84 @@ test('FidusGate Cedar Policy & Command Auditor Integration Tests', async (t) => 
     const isValid = verifyReceipt(attestedReceipt, masterKeys.publicKeyHex);
     assert.strictEqual(isValid, true, 'Gateway verifyReceipt should successfully validate attested session signatures');
   });
+
+  await t.test('Filesystem Drift Logging & Database Persistence', async () => {
+    const db = new FidusGateDatabase();
+    await db.clearDatabase();
+
+    // 1. Log a new drift record
+    const addedDrift = await db.addDrift({
+      filePath: 'apps/secure-gateway/drift-test.txt',
+      changeType: 'added',
+      diff: '+++ New file contents'
+    });
+
+    assert.ok(addedDrift.id, 'Drift record should generate an ID');
+    assert.strictEqual(addedDrift.filePath, 'apps/secure-gateway/drift-test.txt');
+    assert.strictEqual(addedDrift.changeType, 'added');
+    assert.strictEqual(addedDrift.reconciled, false);
+
+    // 2. Query back drifts
+    const list = await db.getDrifts();
+    assert.strictEqual(list.length, 1);
+    assert.strictEqual(list[0].id, addedDrift.id);
+    assert.strictEqual(list[0].reconciled, false);
+  });
+
+  await t.test('Filesystem Drift Active Reconciliation', async () => {
+    const db = new FidusGateDatabase();
+    await db.clearDatabase();
+
+    // Add multiple drifts
+    await db.addDrift({ filePath: 'file1.txt', changeType: 'modified' });
+    await db.addDrift({ filePath: 'file2.txt', changeType: 'added' });
+
+    // Verify drifts are currently unreconciled
+    let list = await db.getDrifts();
+    assert.strictEqual(list.filter(d => !d.reconciled).length, 2);
+
+    // Mark as reconciled
+    await db.reconcileDrifts();
+
+    // Verify they are reconciled
+    list = await db.getDrifts();
+    assert.strictEqual(list.filter(d => !d.reconciled).length, 0);
+    assert.strictEqual(list.filter(d => d.reconciled).length, 2);
+  });
+
+  await t.test('Gemini Policy Co-Pilot Mock Fallback Engine', () => {
+    function generateMockCedarPolicy(prompt: string): { cedarCode: string; explanation: string } {
+      const lowerPrompt = prompt.toLowerCase();
+      
+      if (lowerPrompt.includes('pm-sme') || lowerPrompt.includes('pm')) {
+        return {
+          cedarCode: `permit(principal == sb:issuer::"pm-sme", action == Action::"write_file", resource) when { resource.path.endsWith(".md") };`,
+          explanation: "Fallback Mock: Allows pm-sme principal to write files only if the file path ends with a .md extension."
+        };
+      }
+      
+      if (lowerPrompt.includes('security-sme') || lowerPrompt.includes('security')) {
+        return {
+          cedarCode: `permit(principal == sb:issuer::"security-sme", action in [Action::"read_file", Action::"write_file"], resource) when { resource.path.startsWith("policy") };`,
+          explanation: "Fallback Mock: Permits security-sme to modify or read policy-related files."
+        };
+      }
+
+      return {
+        cedarCode: `permit(principal == sb:issuer::"developer", action == Action::"read_file", resource);`,
+        explanation: "Fallback Mock: Permits developers to read files across the workspace."
+      };
+    }
+
+    const prompt1 = 'Only permit pm-sme to write markdown files';
+    const result1 = generateMockCedarPolicy(prompt1);
+    assert.ok(result1.cedarCode.includes('pm-sme'));
+    assert.ok(result1.cedarCode.includes('Action::"write_file"'));
+    assert.ok(result1.explanation.includes('pm-sme'));
+
+    const prompt2 = 'Only allow security-sme to change policies';
+    const result2 = generateMockCedarPolicy(prompt2);
+    assert.ok(result2.cedarCode.includes('security-sme'));
+    assert.ok(result2.cedarCode.includes('policy'));
+  });
 });

@@ -86,4 +86,14 @@ model ConsensusApproval {
   signature       String        // Cryptographic Ed25519 signature of the approval
 }
 
+model FilesystemDrift {
+  id         String   @id @default(uuid())
+  timestamp  DateTime @default(now())
+  filePath   String
+  changeType String   // 'modified' | 'added' | 'deleted'
+  diff       String?  @db.Text
+  reconciled Boolean  @default(false)
+}
+
+
 
