@@ -93,6 +93,7 @@ export default function App() {
 
   // Consensus Gating States
   const [consensusRequests, setConsensusRequests] = useState<any[]>([]);
+  const [syscalls, setSyscalls] = useState<any[]>([]);
   const [consensusLoading, setConsensusLoading] = useState(false);
 
   // Live Prometheus State
@@ -542,10 +543,26 @@ export default function App() {
   const handleOidcLogin = async (selectedRole: 'developer' | 'admin' | 'auditor') => {
     setAuthLoading(true);
     try {
+      let resolvedEmail = authEmail.trim();
+      // Dynamically align default mock emails to the selected role for frictionless UX,
+      // while preserving any custom email values typed by the user.
+      if (!resolvedEmail || 
+          resolvedEmail === 'developer@fidusgate.internal' || 
+          resolvedEmail === 'admin@fidusgate.internal' || 
+          resolvedEmail === 'auditor@fidusgate.internal' ||
+          resolvedEmail === 'admin2@fidusgate.internal' ||
+          resolvedEmail === 'developer2@fidusgate.internal' ||
+          resolvedEmail === 'audit@fidusgate.internal') {
+        if (selectedRole === 'developer') resolvedEmail = 'developer@fidusgate.internal';
+        else if (selectedRole === 'admin') resolvedEmail = 'admin@fidusgate.internal';
+        else if (selectedRole === 'auditor') resolvedEmail = 'auditor@fidusgate.internal';
+        setAuthEmail(resolvedEmail);
+      }
+
       const res = await fetch(`${API_BASE}/auth/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: selectedRole, email: authEmail })
+        body: JSON.stringify({ role: selectedRole, email: resolvedEmail })
       });
       
       if (res.ok) {
@@ -563,7 +580,8 @@ export default function App() {
           `🎫 JWT bearer token mounted to request headers. Security gateways unlocked.`
         ]);
       } else {
-        alert('Authentication failed. OIDC provider rejected transaction.');
+        const errorData = await res.json().catch(() => ({}));
+        alert(`Authentication failed: ${errorData.error || errorData.message || 'OIDC provider rejected transaction.'}`);
       }
     } catch (err) {
       console.error(err);
@@ -742,7 +760,7 @@ export default function App() {
 
     setConsensusLoading(true);
     try {
-      const mockAttestationSignature = `sig_attest_${Math.random().toString(36).substring(2)}_${Buffer.from(authEmail).toString('base64').substring(0, 16)}`;
+      const mockAttestationSignature = `sig_attest_${Math.random().toString(36).substring(2)}_${btoa(authEmail).substring(0, 16)}`;
 
       const res = await fetch(`${API_BASE}/consensus/requests/approve`, {
         method: 'POST',
@@ -1044,8 +1062,20 @@ export default function App() {
       }
 
       const data = await res.json();
+      if (data.syscalls) {
+        setSyscalls(data.syscalls);
+      }
       if (res.ok) {
-        const logLines = data.logs.split('\n');
+        if (data.status === 'pending_consensus') {
+          setConsoleLines(prev => [
+            ...prev,
+            `⏳ [CONSENSUS GATING]: ${data.message}`,
+            `👉 Instruction: Under the Compliance tab, collect all required signatures. Once approved, re-run this command to execute!`
+          ]);
+          return;
+        }
+
+        const logLines = (data.logs || '').split('\n');
         setConsoleLines(prev => [
           ...prev,
           ...logLines,
@@ -1160,6 +1190,9 @@ export default function App() {
               body: JSON.stringify({ command: testCmd })
             });
             const data = await res.json();
+            if (data.syscalls) {
+              setSyscalls(data.syscalls);
+            }
             if (res.ok) {
               setConsoleLines(prev => [
                 ...prev, 
@@ -1239,6 +1272,9 @@ export default function App() {
                 body: JSON.stringify({ command: bypassCmd })
               });
               const data2 = await res2.json();
+              if (data2.syscalls) {
+                setSyscalls(data2.syscalls);
+              }
               
               setConsoleLines(prev => [
                 ...prev,
@@ -1503,13 +1539,16 @@ export default function App() {
         cmd.startsWith('bash scripts/bootstrap.sh') ||
         cmd.startsWith('bash scripts/ham-drift-watcher.sh') ||
         cmd.startsWith('node packages/crypto-utils') ||
-        cmd.startsWith('node scripts/workflow-scanner.js')
+        cmd.startsWith('node scripts/workflow-scanner.js') ||
+        cmd.startsWith('rm') ||
+        cmd.startsWith('curl') ||
+        cmd.startsWith('npm install')
       ) {
-        if (authRole !== 'admin') {
+        if (authRole !== 'admin' && authRole !== 'developer') {
           setConsoleLines(prev => [
             ...prev,
-            `❌ SECURITY ERROR: Administrative credentials required to spawn isolated shell runtimes!`,
-            `👉 Recommendation: Please authenticate as 'Administrator' using the top OIDC controller widget.`
+            `❌ SECURITY ERROR: Administrative or Developer credentials required to spawn isolated shell runtimes!`,
+            `👉 Recommendation: Please authenticate using the top OIDC controller widget.`
           ]);
           setActivePlaybook(null);
           return;
@@ -2212,6 +2251,28 @@ export default function App() {
                             $ {req.command}
                           </div>
                           
+                          {/* Approved Tooltip/Execution helper */}
+                          {req.status === 'approved' && (
+                            <div style={{ 
+                              fontSize: '0.74rem', 
+                              color: '#00ff66', 
+                              background: 'rgba(0, 255, 102, 0.05)', 
+                              border: '1px solid rgba(0, 255, 102, 0.15)', 
+                              padding: '0.4rem 0.75rem', 
+                              borderRadius: '4px', 
+                              marginTop: '0.35rem', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: '0.4rem',
+                              lineHeight: '1.3'
+                            }}>
+                              <span style={{ fontSize: '0.9rem' }}>💡</span>
+                              <span>
+                                <strong>Consensus Gating Passed!</strong> Run the command <code>{req.command}</code> inside the Sandbox Terminal to execute it and view live microVM output.
+                              </span>
+                            </div>
+                          )}
+                          
                           {/* AI Safety Rating display */}
                           {req.aiRating && (
                             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', marginTop: '0.3rem' }}>
@@ -2290,17 +2351,17 @@ export default function App() {
                                 <button
                                   className="btn btn-secondary animate-glow-green-border"
                                   onClick={() => handleApproveConsensus(req.id)}
-                                  disabled={consensusLoading || req.approvals.some((app: any) => app.approver === authEmail)}
+                                  disabled={consensusLoading || req.approvals.some((app: any) => app.approver === authEmail) || authEmail === req.initiator}
                                   style={{ 
                                     padding: '0.45rem 1rem', 
                                     fontSize: '0.78rem',
-                                    background: req.approvals.some((app: any) => app.approver === authEmail) ? 'rgba(255,255,255,0.03)' : 'rgba(0,255,102,0.08)',
-                                    color: req.approvals.some((app: any) => app.approver === authEmail) ? 'hsl(var(--text-muted))' : '#00ff66',
-                                    borderColor: req.approvals.some((app: any) => app.approver === authEmail) ? 'transparent' : 'rgba(0,255,102,0.3)',
-                                    cursor: req.approvals.some((app: any) => app.approver === authEmail) ? 'not-allowed' : 'pointer'
+                                    background: req.approvals.some((app: any) => app.approver === authEmail) ? 'rgba(255,255,255,0.03)' : authEmail === req.initiator ? 'rgba(255,107,107,0.03)' : 'rgba(0,255,102,0.08)',
+                                    color: req.approvals.some((app: any) => app.approver === authEmail) ? 'hsl(var(--text-muted))' : authEmail === req.initiator ? 'hsl(var(--danger))' : '#00ff66',
+                                    borderColor: req.approvals.some((app: any) => app.approver === authEmail) ? 'transparent' : authEmail === req.initiator ? 'rgba(255,107,107,0.2)' : 'rgba(0,255,102,0.3)',
+                                    cursor: (req.approvals.some((app: any) => app.approver === authEmail) || authEmail === req.initiator) ? 'not-allowed' : 'pointer'
                                   }}
                                 >
-                                  {req.approvals.some((app: any) => app.approver === authEmail) ? 'Signed' : 'Attest & Sign'}
+                                  {req.approvals.some((app: any) => app.approver === authEmail) ? 'Signed' : authEmail === req.initiator ? 'Initiator Blocked' : 'Attest & Sign'}
                                 </button>
                               )}
                             </div>
@@ -3866,13 +3927,37 @@ export default function App() {
               <span style={{ fontSize: '0.62rem', color: 'hsl(var(--text-muted))' }}>seccomp-bpf v3.2</span>
             </div>
             <div style={{ fontSize: '0.7rem', lineHeight: 1.7, color: '#aaa' }}>
-              <div style={{ color: '#00ff66' }}>[sys_execve] <span style={{ color: '#666' }}>0x7f2a</span> → /bin/bash -c &lt;cmd&gt; <span style={{ color: '#2ecc71', fontSize: '0.62rem' }}>ALLOWED</span></div>
-              <div style={{ color: '#00ff66' }}>[sys_openat] <span style={{ color: '#666' }}>0x3b1c</span> → /etc/ld.so.cache O_RDONLY <span style={{ color: '#2ecc71', fontSize: '0.62rem' }}>ALLOWED</span></div>
-              <div style={{ color: '#00ff66' }}>[sys_read]   <span style={{ color: '#666' }}>0x5e4f</span> → fd=3 buffer count=4096 <span style={{ color: '#2ecc71', fontSize: '0.62rem' }}>ALLOWED</span></div>
-              <div style={{ color: '#ff6b6b', fontWeight: 600, background: 'rgba(255,107,107,0.06)', padding: '0.2rem 0.4rem', borderRadius: '4px', marginTop: '0.2rem' }}>
-                [sys_socket] <span style={{ color: '#666' }}>0xc7a2</span> → AF_INET SOCK_STREAM 0 <span style={{ color: '#ff6b6b', fontSize: '0.62rem', fontWeight: 'bold' }}>⛔ BLOCKED</span>
-                <div style={{ fontSize: '0.62rem', color: '#e74c3c', marginTop: '0.15rem', fontStyle: 'italic' }}>↳ seccomp filter: Outbound socket connection denied. 15-minute execution lockout triggered.</div>
-              </div>
+              {syscalls.length === 0 ? (
+                <>
+                  <div style={{ color: '#00ff66' }}>[sys_execve] <span style={{ color: '#666' }}>0x7f2a</span> → /bin/bash -c &lt;cmd&gt; <span style={{ color: '#2ecc71', fontSize: '0.62rem' }}>ALLOWED</span></div>
+                  <div style={{ color: '#00ff66' }}>[sys_openat] <span style={{ color: '#666' }}>0x3b1c</span> → /etc/ld.so.cache O_RDONLY <span style={{ color: '#2ecc71', fontSize: '0.62rem' }}>ALLOWED</span></div>
+                  <div style={{ color: '#00ff66' }}>[sys_read]   <span style={{ color: '#666' }}>0x5e4f</span> → fd=3 buffer count=4096 <span style={{ color: '#2ecc71', fontSize: '0.62rem' }}>ALLOWED</span></div>
+                  <div style={{ fontSize: '0.65rem', color: 'hsl(var(--text-muted))', marginTop: '0.4rem', fontStyle: 'italic' }}>
+                    📡 Standing by. Run a command or playbook to audit live kernel-level system calls...
+                  </div>
+                </>
+              ) : (
+                syscalls.map((sc, idx) => {
+                  const isBlocked = sc.status === 'blocked';
+                  return (
+                    <div key={idx} style={{ 
+                      color: isBlocked ? '#ff6b6b' : '#00ff66', 
+                      fontWeight: isBlocked ? 600 : 'normal',
+                      background: isBlocked ? 'rgba(255,107,107,0.06)' : 'transparent',
+                      padding: isBlocked ? '0.2rem 0.4rem' : '0',
+                      borderRadius: isBlocked ? '4px' : '0',
+                      marginTop: isBlocked ? '0.2rem' : '0'
+                    }}>
+                      [{sc.syscall}] <span style={{ color: '#666' }}>{sc.offset}</span> → {sc.args.join(' ')} <span style={{ color: isBlocked ? '#ff6b6b' : '#2ecc71', fontSize: '0.62rem', fontWeight: isBlocked ? 'bold' : 'normal', marginLeft: '0.4rem' }}>{isBlocked ? '⛔ BLOCKED' : 'ALLOWED'}</span>
+                      {isBlocked && (
+                        <div style={{ fontSize: '0.62rem', color: '#e74c3c', marginTop: '0.15rem', fontStyle: 'italic' }}>
+                          ↳ seccomp filter: {sc.syscall === 'sys_ptrace' ? 'Jail injection and debugging trace attempt denied.' : sc.syscall === 'sys_setns' ? 'Namespace boundary crossing jailbreak attempt denied.' : sc.syscall === 'sys_unshare' ? 'Container namespace separation escape attempt denied.' : 'Outbound socket connection denied.'} 15-minute execution lockout triggered.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </section>
@@ -3935,6 +4020,9 @@ export default function App() {
               </button>
               <button className="btn btn-primary" onClick={() => handleOidcLogin('admin')} disabled={authLoading}>
                 Login as Administrator
+              </button>
+              <button className="btn btn-secondary animate-glow-orange-border" style={{ background: 'rgba(255, 107, 107, 0.08)', color: 'hsl(var(--danger))', borderColor: 'rgba(255, 107, 107, 0.3)' }} onClick={() => handleOidcLogin('auditor')} disabled={authLoading}>
+                Login as Auditor
               </button>
             </>
           ) : (

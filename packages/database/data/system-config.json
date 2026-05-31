@@ -1,4 +1,4 @@
 {
-  "circuitBreakerActive": false,
+  "circuitBreakerActive": true,
   "agentTokenBudget": 1000
 }

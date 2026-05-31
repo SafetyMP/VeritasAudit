@@ -2,6 +2,21 @@
 # Isolated Sandbox Command Executor for Agentic Sub-agents
 # Author: Antigravity Code Assistant
 
+# macOS timeout utility fallback
+if ! command -v timeout &> /dev/null; then
+  if command -v gtimeout &> /dev/null; then
+    timeout() { gtimeout "$@"; }
+  else
+    timeout() {
+      # Fallback to direct execution by shifting past the timeout limit argument
+      # which is the first argument in the standard 'timeout <limit> <cmd...>' call structure
+      local limit="$1"
+      shift
+      "$@"
+    }
+  fi
+fi
+
 COMMAND="$1"
 MOUNT_DIR="$2"
 

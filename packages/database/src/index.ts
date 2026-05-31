@@ -894,6 +894,31 @@ export class FidusGateDatabase {
     return null;
   }
 
+  public async completeAction(actionId: string): Promise<any> {
+    if (this.usePostgres && this.prisma) {
+      try {
+        const updated = await this.prisma.pendingAction.update({
+          where: { id: actionId },
+          data: { status: 'completed' },
+          include: { approvals: true }
+        });
+        return updated;
+      } catch (err: any) {
+        console.warn('⚠️  Prisma PendingAction complete failed, falling back to JSON storage:', err.message);
+      }
+    }
+
+    const list = this.getPendingActionsJson();
+    const action = list.find(a => a.id === actionId);
+    if (action) {
+      action.status = 'completed';
+      const ACTIONS_FILE = path.join(DATA_DIR, 'pending-actions.json');
+      writeJsonAtomic(ACTIONS_FILE, list);
+      return action;
+    }
+    return null;
+  }
+
   public async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; latencyMs: number; error?: string }> {
     if (!this.usePostgres || !this.prisma) {
       return { status: 'healthy', latencyMs: 0 };
@@ -939,6 +964,8 @@ export class FidusGateDatabase {
     writeJsonAtomic(FINDINGS_FILE, []);
     writeJsonAtomic(COMMAND_LOGS_FILE, []);
     writeJsonAtomic(DRIFTS_FILE, []);
+    const ACTIONS_FILE = path.join(DATA_DIR, 'pending-actions.json');
+    writeJsonAtomic(ACTIONS_FILE, []);
     const CONFIG_FILE = path.join(DATA_DIR, 'system-config.json');
     writeJsonAtomic(CONFIG_FILE, { circuitBreakerActive: false, agentTokenBudget: 1000.0 });
   }

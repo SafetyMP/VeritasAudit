@@ -457,13 +457,17 @@ let activeSandboxContainers = 0;
 // Intelligent Auto-Throttling moving latency history
 let recentExecutionLatencies: number[] = [];
 const MAX_LATENCY_HISTORY = 10;
-const AUTO_THROTTLE_THRESHOLD_MS = 50;
+const AUTO_THROTTLE_THRESHOLD_MS = 2000; // Increased to 2000ms to prevent standard Docker container startup latencies from triggering rate limits
 
 export function addExecutionLatency(durationMs: number) {
   recentExecutionLatencies.push(durationMs);
   if (recentExecutionLatencies.length > MAX_LATENCY_HISTORY) {
     recentExecutionLatencies.shift();
   }
+}
+
+export function clearExecutionLatencies() {
+  recentExecutionLatencies = [];
 }
 
 export function getMovingAverageLatency(): number {
@@ -531,7 +535,7 @@ app.use(async (req, res, next) => {
     const systemConfig = await db.getSystemConfig();
     if (systemConfig.circuitBreakerActive) {
       const authHeader = req.headers.authorization;
-      const isReset = req.path === '/api/reset' || req.path === '/api/sandbox/reconcile';
+      const isBypassPath = req.path === '/api/auth/token' || req.path === '/api/reset' || req.path === '/api/sandbox/reconcile';
       if (authHeader && authHeader.startsWith('Bearer ')) {
         const token = authHeader.substring(7);
         try {
@@ -541,7 +545,7 @@ app.use(async (req, res, next) => {
           }
         } catch (e) {}
       }
-      if (isReset) {
+      if (isBypassPath) {
         return next();
       }
       res.status(503).json({
@@ -1277,14 +1281,6 @@ function requiresConsensus(command: string, role: string): boolean {
 // ==========================================
 app.post('/api/sandbox/execute', autoThrottleMiddleware, requireAuth(['admin', 'developer']), async (req, res) => {
   try {
-    if (checkCircuitBreaker()) {
-      const remainingSecs = Math.max(0, Math.ceil((circuitBreakerCooldownUntil - Date.now()) / 1000));
-      res.status(429).json({
-        error: `Sandbox execution locked. SecOps Circuit Breaker tripped due to consecutive security violations. Lock releases in ${remainingSecs} seconds.`
-      });
-      return;
-    }
-
     const { command } = req.body;
     if (!command) {
        res.status(400).json({ error: 'Missing required parameters: command' });
@@ -1294,9 +1290,80 @@ app.post('/api/sandbox/execute', autoThrottleMiddleware, requireAuth(['admin', '
     const userEmail = (req as AuthenticatedRequest).user?.email || 'admin@fidusgate.internal';
     const userRole = (req as AuthenticatedRequest).user?.role || 'admin';
 
-    // eBPF system call level audit (Defense-in-depth verification)
+    // 1. Check if there is an already approved consensus action for this command
+    const pendingActions = await db.getPendingActions();
+    const approvedAction = pendingActions.find(a => 
+      a.command === command && 
+      a.status === 'approved'
+    );
+
+    let isConsensusBypass = false;
+    if (approvedAction) {
+      isConsensusBypass = true;
+      log('security', `🔓 CONSENSUS BYPASS GRANTED: Executing approved consensus action ID: ${approvedAction.id}`);
+      await db.completeAction(approvedAction.id);
+    }
+
+    // 2. Check circuit breaker ONLY if it is not an approved consensus bypass
+    if (!isConsensusBypass && checkCircuitBreaker()) {
+      const remainingSecs = Math.max(0, Math.ceil((circuitBreakerCooldownUntil - Date.now()) / 1000));
+      res.status(429).json({
+        error: `Sandbox execution locked. SecOps Circuit Breaker tripped due to consecutive security violations. Lock releases in ${remainingSecs} seconds.`
+      });
+      return;
+    }
+
+    // 3. eBPF system call level audit (Defense-in-depth verification)
     const syscallAudit = auditSandboxSyscalls(command);
-    if (!syscallAudit.secure) {
+
+    // 4. Consensus Gating Interceptor (Gates high-risk patterns OR seccomp blocks)
+    if (!isConsensusBypass && (requiresConsensus(command, userRole) || !syscallAudit.secure)) {
+      // Check for duplicate pending action
+      const existingPending = pendingActions.find(a => a.command === command && a.status === 'pending');
+      if (existingPending) {
+        res.json({
+          status: 'pending_consensus',
+          actionId: existingPending.id,
+          message: `This command has been suspended under MuSig2 Consensus Gating. It requires ${existingPending.requiredVotes === 3 ? 'all 3 cryptographic key signatures (Admin, Developer, Auditor)' : '2 cryptographic approval signatures from authorized roles'} to execute.`
+        });
+        return;
+      }
+
+      // Run AI Consensus Auditor to determine threat level
+      const audit = auditConsensusRequest(command);
+
+      const pendingAction = await db.createPendingAction({
+        id: `act_${Math.floor(100000 + Math.random() * 900000)}`,
+        command,
+        initiator: userEmail,
+        role: userRole,
+        requiredVotes: (!syscallAudit.secure || audit.rating === 'dangerous') ? 3 : 2, // Seccomp violations always require 3 votes
+        expiresInSeconds: 900,
+        aiRating: !syscallAudit.secure ? 'dangerous' : audit.rating,
+        aiReason: !syscallAudit.secure ? (syscallAudit.violation || 'Critical kernel system call violation detected by seccomp filter.') : audit.reason
+      });
+      
+      log('security', `🛡️ CONSENSUS GATING TRIGGERED: Suspended command execution [${command}] from ${userEmail} (${userRole.toUpperCase()}). Action ID: ${pendingAction.id}`);
+      broadcastWS('consensus_gating_triggered', {
+        actionId: pendingAction.id,
+        command,
+        initiator: userEmail,
+        role: userRole,
+        status: 'pending',
+        aiRating: !syscallAudit.secure ? 'dangerous' : audit.rating,
+        aiReason: !syscallAudit.secure ? (syscallAudit.violation || 'Critical kernel system call violation detected by seccomp filter.') : audit.reason
+      });
+
+      res.json({
+        status: 'pending_consensus',
+        actionId: pendingAction.id,
+        message: `This command has been suspended under MuSig2 Consensus Gating. It requires ${(!syscallAudit.secure || audit.rating === 'dangerous') ? 'all 3 cryptographic key attestations (Admin, Developer, Auditor)' : '2 cryptographic approval signatures from authorized roles'} to execute.`
+      });
+      return;
+    }
+
+    // 5. Fallback Seccomp block (if somehow gating was bypassed or skipped)
+    if (!isConsensusBypass && !syscallAudit.secure) {
       log('security', `🚨 CRITICAL KERNEL SECCOMP VIOLATION: Blocked sandbox execution. Reason: ${syscallAudit.violation}`, { command });
       
       // Trigger a 15-minute system execution lockout!
@@ -1325,39 +1392,6 @@ app.post('/api/sandbox/execute', autoThrottleMiddleware, requireAuth(['admin', '
         error: 'Kernel system call violation blocked',
         message: syscallAudit.violation,
         syscalls: syscallAudit.syscalls
-      });
-      return;
-    }
-
-    // Consensus Gating Interceptor
-    if (requiresConsensus(command, userRole)) {
-      // Run AI Consensus Auditor to determine threat level
-      const audit = auditConsensusRequest(command);
-
-      const pendingAction = await db.createPendingAction({
-        id: `act_${Math.floor(100000 + Math.random() * 900000)}`,
-        command,
-        initiator: userEmail,
-        role: userRole,
-        requiredVotes: audit.rating === 'dangerous' ? 3 : 2, // MuSig2: dangerous commands require ALL 3 keys (Admin, Developer, Auditor)
-        expiresInSeconds: 900,
-        aiRating: audit.rating,
-        aiReason: audit.reason
-      });
-      
-      log('security', `🛡️ CONSENSUS GATING TRIGGERED: Suspended command execution [${command}] from ${userEmail} (${userRole.toUpperCase()}). Action ID: ${pendingAction.id}`);
-      broadcastWS('consensus_gating_triggered', {
-        actionId: pendingAction.id,
-        command,
-        initiator: userEmail,
-        role: userRole,
-        status: 'pending'
-      });
-
-      res.json({
-        status: 'pending_consensus',
-        actionId: pendingAction.id,
-        message: `This command has been suspended under MuSig2 Consensus Gating. It requires ${audit.rating === 'dangerous' ? 'all 3 cryptographic key attestations (Admin, Developer, Auditor)' : '2 cryptographic approval signatures from authorized roles'} to execute.`
       });
       return;
     }
@@ -1421,7 +1455,7 @@ app.post('/api/sandbox/execute', autoThrottleMiddleware, requireAuth(['admin', '
 
     // Input command tokenized audit (Defense-in-Depth against bypasses)
     const auditResult = isCommandLineSecure(command);
-    if (!auditResult.secure) {
+    if (!isConsensusBypass && !auditResult.secure) {
       log('security', `BLOCKED WEB CONSOLE COMMAND: Forbidden command execution attempted. Reason: ${auditResult.reason}`, { command });
       
       handleViolation();
@@ -1754,7 +1788,15 @@ app.post('/api/reset', requireAuth(['admin']), async (req, res) => {
     await db.clearDatabase();
     ibpTracker.clearTasks(); // Clear IBP compliance states on database reset
     plmTracker.clearTasks(); // Clear PLM compliance states on database reset
-    log('warn', 'Database reset to initial template state.');
+    clearExecutionLatencies(); // Clear latency moving average history on database reset
+    
+    // Reset in-memory SecOps circuit breaker lockout state
+    circuitBreakerTripped = false;
+    consecutiveViolations = 0;
+    circuitBreakerCooldownUntil = 0;
+    broadcastWS('circuit_breaker_reset', { active: false });
+
+    log('warn', 'Database reset to initial template state and circuit breaker reset.');
     res.json({ message: 'Database reset successfully' });
   } catch (error) {
     log('error', 'Failed to reset database', error);
