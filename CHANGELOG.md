@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/SafetyMP/FidusGate/compare/v1.1.0...v1.2.0) (2026-05-31)
+
+
+### Features
+
+* implement live API integrations for sandbox playbooks and advanced bypass tests ([e06a69c](https://github.com/SafetyMP/FidusGate/commit/e06a69c843ce17720346779c357c9ad5a1793e69))
+
 # [1.1.0](https://github.com/SafetyMP/FidusGate/compare/v1.0.0...v1.1.0) (2026-05-31)
 
 
