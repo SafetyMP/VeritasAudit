@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { PrismaClient } from '@prisma/client';
-import { Transaction, AuditReceipt, SecurityFinding } from '@veritas/core-types';
+import { Transaction, AuditReceipt, SecurityFinding } from '@fidusgate/core-types';
 
 export interface CommandLogEntry {
   id: string;
@@ -125,7 +125,7 @@ const INITIAL_RECEIPTS: AuditReceipt[] = [
   }
 ];
 
-export class VeritasDatabase {
+export class FidusGateDatabase {
   private prisma: PrismaClient | null = null;
   private usePostgres = false;
 

@@ -16,7 +16,7 @@ tags: [plm, pdlc, requirements, traceability, api-drift, semver, release-gating]
 
 A premium playbook for running AI agent coding projects in full alignment with Product Lifecycle Management (PLM) and Product Development Lifecycle (PDLC) foundations. This playbook ensures that technical implementations follow a disciplined, quality-controlled, and audited engineering thread from requirements definition to final release.
 
-These gates are programmatically enforced by the **Veritas Security Gateway** (the agent harness). If an agent attempts high-risk actions (like code commits or publishing) without maintaining bidirectional requirement traceability, checking for API drift, or documenting releases, the gateway will programmatically block the operations using Cedar access controls.
+These gates are programmatically enforced by the **FidusGate Security Gateway** (the agent harness). If an agent attempts high-risk actions (like code commits or publishing) without maintaining bidirectional requirement traceability, checking for API drift, or documenting releases, the gateway will programmatically block the operations using Cedar access controls.
 
 ---
 
@@ -53,7 +53,7 @@ To guarantee code quality and prevent technical regression, every feature modifi
 * **Enforcement:** Committing code (`git commit`) is forbidden if source files have been modified but `plm.associated_tests_written` is false.
 
 ### 3. API & Schema Drift Prevention Gate (Design & Architecture Phase)
-Unplanned schema modifications can break downstream components. Veritas tracks interface stability statefully.
+Unplanned schema modifications can break downstream components. FidusGate tracks interface stability statefully.
 * **Drift Monitoring:** Modifying sensitive interface contracts (such as `prisma/schema.prisma` or exported types inside `packages/core-types/`) marks the session with a `has_api_drift = true` risk flag.
 * **Drift Verification:** The agent must execute the project's contract or schema verification tests (e.g. `npm run test` or running specific migration compilations) and push confirmation to the gateway via `POST /api/plm/drift-verify` to clear the blockade.
 * **Enforcement:** Committing code is forbidden if `plm.has_api_drift` is true and `plm.drift_verified` is false.

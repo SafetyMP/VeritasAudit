@@ -181,7 +181,7 @@ node packages/crypto-utils/dist/index.js --verify <path_to_receipt_json>
 While FidusGate is designed to scaffold zero-trust structures with local configurations for development, transitioning to a highly available enterprise-grade production environment requires upgrading the following layers:
 
 ### 1. Database Architecture & Persistence Strategy
-* **Current Setup**: By default, `@veritas/database` operates in a zero-dependency local JSON file store mode. However, a fully relational database capability is already integrated using the **Prisma ORM**.
+* **Current Setup**: By default, `@fidusgate/database` operates in a zero-dependency local JSON file store mode. However, a fully relational database capability is already integrated using the **Prisma ORM**.
 * **Transition to Production**:
   1. Define a `DATABASE_URL` pointing to your PostgreSQL cluster in the `.env` file of the gateway.
   2. Run `npx prisma db push` to generate and apply the structured database schema.

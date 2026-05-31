@@ -16,7 +16,7 @@ tags: [ibp, strategy, finance, operations, cross-functional, budget-gating, synt
 
 A comprehensive playbook for running AI agent coding projects in full alignment with Integrated Business Planning (IBP) foundations. This playbook ensures that technical coding work does not occur in an operational silo, but is statefully aligned with both **Strategic Goals** and **Financial/Resource Budgets**.
 
-These principles are statefully enforced by the **Veritas Security Gateway** (the agent harness). If an agent attempts high-risk actions (like code commits or publishing) without completing mandatory IBP synthesis reviews, or if they exceed token budgets, the gateway will programmatically block the operations using Cedar access controls.
+These principles are statefully enforced by the **FidusGate Security Gateway** (the agent harness). If an agent attempts high-risk actions (like code commits or publishing) without completing mandatory IBP synthesis reviews, or if they exceed token budgets, the gateway will programmatically block the operations using Cedar access controls.
 
 ---
 
@@ -64,7 +64,7 @@ Break down your work into two distinct execution channels to avoid technical sil
 
 ### Step 3: Stateful Execution & Budget Tracking
 Execute both specialized and generic tasks inside the secure unprivileged Docker sandbox.
-- The Veritas Security Gateway will accumulate estimated token costs for all tool calls in real time.
+- The FidusGate Security Gateway will accumulate estimated token costs for all tool calls in real time.
 - If your running consumption (`tokensConsumed`) exceeds the session limit (`tokenBudget`), the gateway will transition to an **Un-Aligned** state, blocking all subsequent Tier 3 and Tier 4 commands.
 
 ### Step 4: Cross-Functional IBP Synthesis

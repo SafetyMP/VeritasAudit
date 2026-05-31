@@ -42,7 +42,7 @@ if (isVulnerable) {
 }
 
 // Write the findings directly to the shared mounted database volume
-console.log('💾 Syncing scan reports directly to Veritas Database volume...');
+console.log('💾 Syncing scan reports directly to FidusGate Database volume...');
 try {
   fs.writeFileSync(databasePath, JSON.stringify(findings, null, 2), 'utf8');
   console.log(`✅ Scan report successfully written. Findings synced: ${findings.length}`);

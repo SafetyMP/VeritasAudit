@@ -15,7 +15,7 @@ The **Frontend SME** crafts the graphical interfaces, guaranteeing visual excell
 * **Performance:** Optimizing LCP (Largest Contentful Paint) and INP (Interaction to Next Paint) values.
 
 ## Gatekeeping Rule
-The Veritas Security Gateway programmatically restricts modifications of frontend codebases and dashboards:
+The FidusGate Security Gateway programmatically restricts modifications of frontend codebases and dashboards:
 * **Protected Files:** `apps/admin-dashboard/`, component trees, static visual stylesheets.
 * **Prerequisites:** Must execute tool calls under the `sb:issuer:frontend-sme` cryptographic signature.
 

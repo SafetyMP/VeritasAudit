@@ -1,5 +1,5 @@
 {
-  "name": "@veritas/admin-dashboard",
+  "name": "@fidusgate/admin-dashboard",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "test": "echo \"No dashboard tests defined.\""
   },
   "dependencies": {
-    "@veritas/core-types": "1.0.0",
+    "@fidusgate/core-types": "1.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

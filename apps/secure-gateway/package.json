@@ -1,5 +1,5 @@
 {
-  "name": "@veritas/secure-gateway",
+  "name": "@fidusgate/secure-gateway",
   "version": "1.0.0",
   "private": true,
   "main": "dist/index.js",
@@ -11,9 +11,9 @@
     "test": "npm run build && node --test dist/cedar.test.js"
   },
   "dependencies": {
-    "@veritas/core-types": "1.0.0",
-    "@veritas/crypto-utils": "1.0.0",
-    "@veritas/database": "1.0.0",
+    "@fidusgate/core-types": "1.0.0",
+    "@fidusgate/crypto-utils": "1.0.0",
+    "@fidusgate/database": "1.0.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.3"

@@ -16,7 +16,7 @@ The **Site Reliability Engineer (SRE) / DevOps SME** manages runtime scalability
 * **Drift Checking:** Verifying context stability and pre-commit hooks sanity.
 
 ## Gatekeeping Rule
-The Veritas Security Gateway programmatically restricts modifications of workflows and build scripts to the DevOps role:
+The FidusGate Security Gateway programmatically restricts modifications of workflows and build scripts to the DevOps role:
 * **Protected Files:** `.github/workflows/`, Docker files (`Dockerfile`), build/bootstrap scripts.
 * **Prerequisites:** Must execute tool calls under the `sb:issuer:devops-sme` cryptographic signature.
 

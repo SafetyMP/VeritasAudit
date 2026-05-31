@@ -16,7 +16,7 @@ tags: [devops, compliance, continuous-integration, security-audit, sandboxing, z
 
 A guide for governing and enforcing secure, high-standard DevOps practices on Antigravity development projects. This playbook teaches how to maintain toolchain consistency, use unprivileged sandbox execution, run continuous pipeline verification, perform workflow security scans, check for context drift, and perform zero-trust stateful releases.
 
-These practices are statefully enforced by the **Veritas Security Gateway** (the agent harness). If an agent attempts high-risk actions (like code commits or publishing) without completing mandatory DevOps verification steps, the secure harness will programmatically block the action using Cedar authorization controls.
+These practices are statefully enforced by the **FidusGate Security Gateway** (the agent harness). If an agent attempts high-risk actions (like code commits or publishing) without completing mandatory DevOps verification steps, the secure harness will programmatically block the action using Cedar authorization controls.
 
 ---
 

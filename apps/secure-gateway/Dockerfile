@@ -34,10 +34,10 @@ COPY apps/secure-gateway/src ./apps/secure-gateway/src
 COPY apps/secure-gateway/tsconfig.json ./apps/secure-gateway/
 
 # Build shared library packages and gateway microservice
-RUN npm run build --workspace=@veritas/core-types \
-    && npm run build --workspace=@veritas/crypto-utils \
-    && npm run build --workspace=@veritas/database \
-    && npm run build --workspace=@veritas/secure-gateway
+RUN npm run build --workspace=@fidusgate/core-types \
+    && npm run build --workspace=@fidusgate/crypto-utils \
+    && npm run build --workspace=@fidusgate/database \
+    && npm run build --workspace=@fidusgate/secure-gateway
 
 # Prune devDependencies to keep runtime modules minimal
 RUN npm prune --omit=dev

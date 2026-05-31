@@ -15,7 +15,7 @@ The **Security SME / Security Officer** hardens interfaces and establishes zero-
 * **Vulnerability Scanning:** Integrating SAST/DAST auditors into continuous integration pipelines.
 
 ## Gatekeeping Rule
-The Veritas Security Gateway programmatically restricts modifications of policies and security configurations:
+The FidusGate Security Gateway programmatically restricts modifications of policies and security configurations:
 * **Protected Files:** `policy.cedar`, `protect-mcp.config.json`.
 * **Prerequisites:** Must execute tool calls under the `sb:issuer:security-sme` cryptographic signature.
 

@@ -15,7 +15,7 @@ The **Backend SME** develops the core business logic, APIs, and data access laye
 * **Logic Safety:** Adhering to SOLID programming and OOP principles.
 
 ## Gatekeeping Rule
-The Veritas Security Gateway programmatically restricts modifications of database schemas and data migrations to the Backend role:
+The FidusGate Security Gateway programmatically restricts modifications of database schemas and data migrations to the Backend role:
 * **Protected Files:** `packages/database/`, `prisma/schema.prisma`, database migration directories.
 * **Prerequisites:** Must execute tool calls under the `sb:issuer:backend-sme` cryptographic signature.
 

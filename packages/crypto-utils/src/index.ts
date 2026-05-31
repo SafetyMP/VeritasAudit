@@ -1,6 +1,6 @@
 import * as crypto from 'node:crypto';
 import { execSync } from 'node:child_process';
-import { AuditReceipt, AuditReceiptPayload } from '@veritas/core-types';
+import { AuditReceipt, AuditReceiptPayload } from '@fidusgate/core-types';
 
 export interface KeyPair {
   publicKeyHex: string;

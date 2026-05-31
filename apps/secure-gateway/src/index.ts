@@ -4,9 +4,9 @@ import jwt from 'jsonwebtoken';
 import { execSync } from 'node:child_process';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { VeritasDatabase, CommandLogEntry } from '@veritas/database';
-import { verifyReceipt } from '@veritas/crypto-utils';
-import { Transaction, AuditReceipt, SecurityFinding } from '@veritas/core-types';
+import { FidusGateDatabase, CommandLogEntry } from '@fidusgate/database';
+import { verifyReceipt } from '@fidusgate/crypto-utils';
+import { Transaction, AuditReceipt, SecurityFinding } from '@fidusgate/core-types';
 import { CedarEvaluator } from './cedar-evaluator';
 import { isCommandLineSecure } from './command-auditor';
 
@@ -360,7 +360,7 @@ export class PLMComplianceTracker {
 
 const app = express();
 const port = process.env.PORT || 3001;
-const db = new VeritasDatabase();
+const db = new FidusGateDatabase();
 const devopsTracker = new DevOpsComplianceTracker();
 const ibpTracker = new IBPComplianceTracker();
 const plmTracker = new PLMComplianceTracker();
@@ -370,7 +370,7 @@ let fidusgatePolicyEvaluationsAllow = 0;
 let fidusgatePolicyEvaluationsDeny = 0;
 
 
-// Load Veritas MCP Configuration and policies
+// Load FidusGate MCP Configuration and policies
 const configPath = path.resolve(process.cwd(), 'protect-mcp.config.json');
 let config: any = { mode: 'enforce' }; // default
 if (fs.existsSync(configPath)) {

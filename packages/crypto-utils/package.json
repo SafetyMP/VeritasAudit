@@ -1,5 +1,5 @@
 {
-  "name": "@veritas/crypto-utils",
+  "name": "@fidusgate/crypto-utils",
   "version": "1.0.0",
   "private": true,
   "main": "dist/index.js",
@@ -10,7 +10,7 @@
     "test": "npm run build && node --test dist/crypto.test.js"
   },
   "dependencies": {
-    "@veritas/core-types": "1.0.0"
+    "@fidusgate/core-types": "1.0.0"
   },
   "devDependencies": {
     "typescript": "^5.4.5"

@@ -1,5 +1,5 @@
 {
-  "name": "@veritas/database",
+  "name": "@fidusgate/database",
   "version": "1.0.0",
   "private": true,
   "main": "dist/index.js",
@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",
-    "@veritas/core-types": "1.0.0"
+    "@fidusgate/core-types": "1.0.0"
   },
   "devDependencies": {
     "prisma": "^5.20.0",

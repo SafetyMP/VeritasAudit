@@ -15,7 +15,7 @@ The **Software Architect SME** designs robust, scalable, and modular system boun
 * **ADRs:** Formulating formal Architecture Decision Records (ADRs) to record structural trade-offs.
 
 ## Gatekeeping Rule
-The Veritas Security Gateway programmatically restricts modifications of exported models and contract definitions:
+The FidusGate Security Gateway programmatically restricts modifications of exported models and contract definitions:
 * **Protected Files:** `packages/core-types/`, exported type definitions, API specifications, ADR logs.
 * **Prerequisites:** Must execute tool calls under the `sb:issuer:architecture-sme` cryptographic signature.
 

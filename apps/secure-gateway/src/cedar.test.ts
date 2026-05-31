@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { CedarEvaluator } from './cedar-evaluator';
 import { isCommandLineSecure, parseShellCommand } from './command-auditor';
-import { VeritasDatabase } from '@veritas/database';
+import { FidusGateDatabase } from '@fidusgate/database';
 
 test('FidusGate Cedar Policy & Command Auditor Integration Tests', async (t) => {
   // Load standard policy.cedar from repo root
@@ -588,7 +588,7 @@ test('FidusGate Cedar Policy & Command Auditor Integration Tests', async (t) => 
   // Combined Observability & Forensic Audit Logs Tests
   // ==========================================
   await t.test('Forensic Logs - Database persistence and retrieval', async () => {
-    const db = new VeritasDatabase();
+    const db = new FidusGateDatabase();
     await db.clearDatabase();
 
     const logEntry = {

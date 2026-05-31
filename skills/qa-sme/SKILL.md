@@ -15,7 +15,7 @@ The **Quality Assurance (QA) SME** verifies code health, functionality, and perf
 * **Traceability Verification:** Bidirectional verification mapping code to test assertions.
 
 ## Gatekeeping Rule
-The Veritas Security Gateway programmatically restricts modifications of test files and test configurations:
+The FidusGate Security Gateway programmatically restricts modifications of test files and test configurations:
 * **Protected Files:** `*.test.ts`, `*.spec.ts`, test suites, and load test scripts.
 * **Prerequisites:** Must execute tool calls under the `sb:issuer:qa-sme` cryptographic signature.
 

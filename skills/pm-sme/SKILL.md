@@ -14,7 +14,7 @@ The **Product Owner / Product Manager (PM) SME** acts as the voice of the stakeh
 * **Release Notes:** Compiling changelogs and verifying release versions.
 
 ## Gatekeeping Rule
-The Veritas Security Gateway programmatically restricts modifications of documentation and product changelogs to the PM role:
+The FidusGate Security Gateway programmatically restricts modifications of documentation and product changelogs to the PM role:
 * **Protected Files:** `CHANGELOG.md`, backlog specifications, project requirements records.
 * **Prerequisites:** Must execute tool calls under the `sb:issuer:pm-sme` cryptographic signature.
 

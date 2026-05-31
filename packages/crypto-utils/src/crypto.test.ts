@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { generateKeyPair, signPayload, verifyReceipt } from './index';
-import { AuditReceiptPayload } from '@veritas/core-types';
+import { AuditReceiptPayload } from '@fidusgate/core-types';
 
 test('Ed25519 Public-Key Cryptography Tests', async (t) => {
   

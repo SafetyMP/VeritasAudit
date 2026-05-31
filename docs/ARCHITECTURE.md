@@ -42,12 +42,12 @@ graph TD
 
 | Component Name | Workspace Path | Package Identifier | Purpose & Value |
 | :--- | :--- | :--- | :--- |
-| **Secure Gateway Backend** | `apps/secure-gateway` | `@veritas/secure-gateway` | The security gatekeeper that intercepts tool calls, evaluates Cedar policies, and signs transaction receipts. |
-| **Operations Dashboard** | `apps/admin-dashboard` | `@veritas/admin-dashboard` | The interactive administrative console for monitoring evaluations, auditing logs, and simulating policies. |
-| **Rust Cedar Policy Daemon** | `packages/cedar-daemon` | `@veritas/cedar-daemon` | High-speed, Rust-native daemon executing schema-guided Cedar authorization decisions in a secure container. |
-| **Cryptographic Utilities** | `packages/crypto-utils` | `@veritas/crypto-utils` | Encapsulates Ed25519 signature flows, offline CLI verifiers, and interfaces to remote HSM providers (Vault/GCP). |
-| **Core Database Client** | `packages/database` | `@veritas/database` | Thread-safe transaction persistence layer supporting JSON local files and PostgreSQL database configurations. |
-| **Unified Core Types** | `packages/core-types` | `@veritas/core-types` | Strictly typed interfaces for logs, receipts, compliance findings, and transaction payloads. |
+| **Secure Gateway Backend** | `apps/secure-gateway` | `@fidusgate/secure-gateway` | The security gatekeeper that intercepts tool calls, evaluates Cedar policies, and signs transaction receipts. |
+| **Operations Dashboard** | `apps/admin-dashboard` | `@fidusgate/admin-dashboard` | The interactive administrative console for monitoring evaluations, auditing logs, and simulating policies. |
+| **Rust Cedar Policy Daemon** | `packages/cedar-daemon` | `@fidusgate/cedar-daemon` | High-speed, Rust-native daemon executing schema-guided Cedar authorization decisions in a secure container. |
+| **Cryptographic Utilities** | `packages/crypto-utils` | `@fidusgate/crypto-utils` | Encapsulates Ed25519 signature flows, offline CLI verifiers, and interfaces to remote HSM providers (Vault/GCP). |
+| **Core Database Client** | `packages/database` | `@fidusgate/database` | Thread-safe transaction persistence layer supporting JSON local files and PostgreSQL database configurations. |
+| **Unified Core Types** | `packages/core-types` | `@fidusgate/core-types` | Strictly typed interfaces for logs, receipts, compliance findings, and transaction payloads. |
 | **Isolated Execution Sandbox** | `scripts/*` & `scripts/sandbox` | *N/A* | Shell-based runtime controllers providing copy-on-write Docker microVM mounts and gVisor isolation gates. |
 
 ---
@@ -96,7 +96,7 @@ The **Rust Cedar Policy Daemon** provides the high-performance authorization bac
 * **In-Memory Decisioning:** Resolves complex authorization trees in microseconds, preventing pipeline lag for high-throughput AI agents.
 
 #### 🔹 Operational Runbook
-* **Compilation:** Managed via the package build task `npm run build --workspace=@veritas/cedar-daemon`, which triggers a multi-stage Docker build (`Dockerfile`) to compile the Rust binary in a release configuration.
+* **Compilation:** Managed via the package build task `npm run build --workspace=@fidusgate/cedar-daemon`, which triggers a multi-stage Docker build (`Dockerfile`) to compile the Rust binary in a release configuration.
 * **Runtime:** Spawns as an independent microservice container on port `50051`. The secure gateway sends HTTP/REST authorization payloads to the daemon for evaluation, falling back gracefully to the TypeScript engine if the container is offline.
 
 ---
@@ -110,7 +110,7 @@ The **Cryptographic Utilities** package provides the cryptographic engine for Fi
 * **Verification CLI:** Exposes an offline command-line verifier allowing regulators to confirm receipt integrity without access to the FidusGate server.
 
 #### 🔹 Operational Runbook
-* **Library Import:** Imported as a local workspace dependency (`@veritas/crypto-utils`) by the secure-gateway.
+* **Library Import:** Imported as a local workspace dependency (`@fidusgate/crypto-utils`) by the secure-gateway.
 * **CLI Execution:** Can be executed locally to generate keypairs or verify receipts:
   ```bash
   # Generate new Ed25519 keypair
@@ -144,7 +144,7 @@ The **Unified Core Types** package defines the strictly typed structural boundar
 
 #### 🔹 Operational Runbook
 * **Compilation:** Compiled using `tsc` to distribute JS outputs and ambient declarations (`.d.ts`).
-* **Importing:** Included at the absolute top of the package dependency tree, imported globally via `@veritas/core-types`.
+* **Importing:** Included at the absolute top of the package dependency tree, imported globally via `@fidusgate/core-types`.
 
 ---
 

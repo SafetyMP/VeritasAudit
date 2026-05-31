@@ -27,9 +27,9 @@ COPY apps/admin-dashboard/vite.config.ts ./apps/admin-dashboard/
 COPY apps/admin-dashboard/index.html ./apps/admin-dashboard/
 
 # Build shared library packages and compile Vite React production bundle
-RUN npm run build --workspace=@veritas/core-types \
-    && npm run build --workspace=@veritas/crypto-utils \
-    && npm run build --workspace=@veritas/admin-dashboard
+RUN npm run build --workspace=@fidusgate/core-types \
+    && npm run build --workspace=@fidusgate/crypto-utils \
+    && npm run build --workspace=@fidusgate/admin-dashboard
 
 # ==========================================
 # Stage 2: Production Nginx Server

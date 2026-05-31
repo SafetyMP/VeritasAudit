@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-VeritasAudit Lyria Soundtrack Generator
+FidusGate Lyria Soundtrack Generator
 Engineered by Antigravity
 
 Generates high-fidelity background soundtracks using Google DeepMind's Lyria AI music models.
@@ -175,7 +175,7 @@ def generate_via_sdk(model_name, prompt, out_path):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="⚖️ VeritasAudit Lyria Soundtrack Generator",
+        description="⚖️ FidusGate Lyria Soundtrack Generator",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
@@ -194,7 +194,7 @@ def main():
     
     parser.add_argument(
         "--out",
-        default="./audio_segments/veritas_lyria_soundtrack.mp3",
+        default="./audio_segments/fidusgate_lyria_soundtrack.mp3",
         help="Output path to save the generated audio file."
     )
     
@@ -206,7 +206,7 @@ def main():
     args = parser.parse_args()
 
     print("\033[95m===================================================\033[0m")
-    print("\033[95m⚖️  VeritasAudit: Lyria AI Music Generation Pipeline\033[0m")
+    print("\033[95m⚖️  FidusGate: Lyria AI Music Generation Pipeline\033[0m")
     print("\033[95m===================================================\033[0m")
 
     # Resolve API Key
