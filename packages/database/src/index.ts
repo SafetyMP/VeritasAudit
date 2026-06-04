@@ -9,6 +9,17 @@ function calculateReceiptHash(payload: any): string {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
 
+export interface BudgetExtensionRequest {
+  id: string;
+  createdAt: string;
+  requestedAmount: number;
+  reason: string;
+  applicant: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewer?: string | null;
+  reviewedAt?: string | null;
+}
+
 export interface CommandLogEntry {
   id: string;
   timestamp: string;
@@ -35,6 +46,7 @@ const RECEIPTS_FILE = path.join(DATA_DIR, 'receipts.json');
 const FINDINGS_FILE = path.join(DATA_DIR, 'findings.json');
 const COMMAND_LOGS_FILE = path.join(DATA_DIR, 'command-logs.json');
 const DRIFTS_FILE = path.join(DATA_DIR, 'drifts.json');
+const BUDGET_EXTENSIONS_FILE = path.join(DATA_DIR, 'budget-extensions.json');
 
 // POSIX-compliant atomic file writer helper to prevent JSON database file corruption
 function writeJsonAtomic(filePath: string, data: any) {
@@ -192,6 +204,10 @@ export class FidusGateDatabase {
 
     if (!fs.existsSync(DRIFTS_FILE)) {
       writeJsonAtomic(DRIFTS_FILE, []);
+    }
+
+    if (!fs.existsSync(BUDGET_EXTENSIONS_FILE)) {
+      writeJsonAtomic(BUDGET_EXTENSIONS_FILE, []);
     }
   }
 
@@ -919,6 +935,167 @@ export class FidusGateDatabase {
     return null;
   }
 
+  private getBudgetExtensionsJson(): BudgetExtensionRequest[] {
+    this.ensureInitialized();
+    if (!fs.existsSync(BUDGET_EXTENSIONS_FILE)) {
+      writeJsonAtomic(BUDGET_EXTENSIONS_FILE, []);
+    }
+    try {
+      const data = fs.readFileSync(BUDGET_EXTENSIONS_FILE, 'utf-8');
+      return JSON.parse(data);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  public async getBudgetExtensionRequests(): Promise<BudgetExtensionRequest[]> {
+    if (this.usePostgres && this.prisma) {
+      try {
+        const requests = await this.prisma.budgetExtensionRequest.findMany({
+          orderBy: { createdAt: 'desc' }
+        });
+        return requests.map(r => ({
+          id: r.id,
+          createdAt: r.createdAt.toISOString(),
+          requestedAmount: r.requestedAmount,
+          reason: r.reason,
+          applicant: r.applicant,
+          status: r.status as any,
+          reviewer: r.reviewer,
+          reviewedAt: r.reviewedAt ? r.reviewedAt.toISOString() : null
+        }));
+      } catch (err: any) {
+        console.warn('⚠️  Prisma BudgetExtensionRequest query failed, falling back to JSON storage:', err.message);
+      }
+    }
+    return this.getBudgetExtensionsJson();
+  }
+
+  public async createBudgetExtensionRequest(id: string, requestedAmount: number, reason: string, applicant: string): Promise<BudgetExtensionRequest> {
+    const newEntry: BudgetExtensionRequest = {
+      id,
+      createdAt: new Date().toISOString(),
+      requestedAmount,
+      reason,
+      applicant,
+      status: 'pending',
+      reviewer: null,
+      reviewedAt: null
+    };
+
+    if (this.usePostgres && this.prisma) {
+      try {
+        const created = await this.prisma.budgetExtensionRequest.create({
+          data: {
+            id: newEntry.id,
+            createdAt: new Date(newEntry.createdAt),
+            requestedAmount: newEntry.requestedAmount,
+            reason: newEntry.reason,
+            applicant: newEntry.applicant,
+            status: newEntry.status,
+            reviewer: null,
+            reviewedAt: null
+          }
+        });
+        return {
+          id: created.id,
+          createdAt: created.createdAt.toISOString(),
+          requestedAmount: created.requestedAmount,
+          reason: created.reason,
+          applicant: created.applicant,
+          status: created.status as any,
+          reviewer: created.reviewer,
+          reviewedAt: created.reviewedAt ? created.reviewedAt.toISOString() : null
+        };
+      } catch (err: any) {
+        console.warn('⚠️  Prisma BudgetExtensionRequest creation failed, falling back to JSON storage:', err.message);
+      }
+    }
+
+    const list = this.getBudgetExtensionsJson();
+    list.push(newEntry);
+    writeJsonAtomic(BUDGET_EXTENSIONS_FILE, list);
+    return newEntry;
+  }
+
+  public async approveBudgetExtensionRequest(id: string, reviewer: string): Promise<BudgetExtensionRequest | null> {
+    const reviewedAtStr = new Date().toISOString();
+    if (this.usePostgres && this.prisma) {
+      try {
+        const updated = await this.prisma.budgetExtensionRequest.update({
+          where: { id },
+          data: {
+            status: 'approved',
+            reviewer,
+            reviewedAt: new Date(reviewedAtStr)
+          }
+        });
+        return {
+          id: updated.id,
+          createdAt: updated.createdAt.toISOString(),
+          requestedAmount: updated.requestedAmount,
+          reason: updated.reason,
+          applicant: updated.applicant,
+          status: updated.status as any,
+          reviewer: updated.reviewer,
+          reviewedAt: updated.reviewedAt ? updated.reviewedAt.toISOString() : null
+        };
+      } catch (err: any) {
+        console.warn('⚠️  Prisma BudgetExtensionRequest approval failed, falling back to JSON storage:', err.message);
+      }
+    }
+
+    const list = this.getBudgetExtensionsJson();
+    const req = list.find(r => r.id === id);
+    if (req) {
+      req.status = 'approved';
+      req.reviewer = reviewer;
+      req.reviewedAt = reviewedAtStr;
+      writeJsonAtomic(BUDGET_EXTENSIONS_FILE, list);
+      return req;
+    }
+    return null;
+  }
+
+  public async rejectBudgetExtensionRequest(id: string, reviewer: string): Promise<BudgetExtensionRequest | null> {
+    const reviewedAtStr = new Date().toISOString();
+    if (this.usePostgres && this.prisma) {
+      try {
+        const updated = await this.prisma.budgetExtensionRequest.update({
+          where: { id },
+          data: {
+            status: 'rejected',
+            reviewer,
+            reviewedAt: new Date(reviewedAtStr)
+          }
+        });
+        return {
+          id: updated.id,
+          createdAt: updated.createdAt.toISOString(),
+          requestedAmount: updated.requestedAmount,
+          reason: updated.reason,
+          applicant: updated.applicant,
+          status: updated.status as any,
+          reviewer: updated.reviewer,
+          reviewedAt: updated.reviewedAt ? updated.reviewedAt.toISOString() : null
+        };
+      } catch (err: any) {
+        console.warn('⚠️  Prisma BudgetExtensionRequest rejection failed, falling back to JSON storage:', err.message);
+      }
+    }
+
+    const list = this.getBudgetExtensionsJson();
+    const req = list.find(r => r.id === id);
+    if (req) {
+      req.status = 'rejected';
+      req.reviewer = reviewer;
+      req.reviewedAt = reviewedAtStr;
+      writeJsonAtomic(BUDGET_EXTENSIONS_FILE, list);
+      return req;
+    }
+    return null;
+  }
+
   public async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; latencyMs: number; error?: string }> {
     if (!this.usePostgres || !this.prisma) {
       return { status: 'healthy', latencyMs: 0 };
@@ -951,7 +1128,8 @@ export class FidusGateDatabase {
           this.prisma.auditReceipt.deleteMany(),
           this.prisma.securityFinding.deleteMany(),
           this.prisma.logEntry.deleteMany(),
-          this.prisma.commandLog.deleteMany()
+          this.prisma.commandLog.deleteMany(),
+          this.prisma.budgetExtensionRequest.deleteMany()
         ]);
       } catch (err: any) {
         console.warn('⚠️  Prisma Database clear failed, falling back to JSON storage:', err.message);
@@ -968,5 +1146,6 @@ export class FidusGateDatabase {
     writeJsonAtomic(ACTIONS_FILE, []);
     const CONFIG_FILE = path.join(DATA_DIR, 'system-config.json');
     writeJsonAtomic(CONFIG_FILE, { circuitBreakerActive: false, agentTokenBudget: 1000.0 });
+    writeJsonAtomic(BUDGET_EXTENSIONS_FILE, []);
   }
 }

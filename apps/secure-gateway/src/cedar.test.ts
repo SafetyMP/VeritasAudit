@@ -976,4 +976,35 @@ test('FidusGate Cedar Policy & Command Auditor Integration Tests', async (t) => 
       assert.strictEqual(LOCKOUT_DURATION_MS, 900000, '15-minute lockout should be 900000ms');
     });
   });
+
+  await t.test('Budget Extension & Negotiation CRUD and Tracker Integration', async (subT) => {
+    const db = new FidusGateDatabase();
+    
+    await subT.test('Should create, approve, and reject budget extension requests', async () => {
+      // Clear database to ensure clean state
+      await db.clearDatabase();
+
+      const req1 = await db.createBudgetExtensionRequest('req-test-1', 15000, 'Compliance run REQ-300', 'dev-1');
+      assert.ok(req1);
+      assert.strictEqual(req1.id, 'req-test-1');
+      assert.strictEqual(req1.requestedAmount, 15000);
+      assert.strictEqual(req1.applicant, 'dev-1');
+      assert.strictEqual(req1.status, 'pending');
+
+      const requests = await db.getBudgetExtensionRequests();
+      assert.strictEqual(requests.length, 1);
+      assert.strictEqual(requests[0].id, 'req-test-1');
+
+      const approved = await db.approveBudgetExtensionRequest('req-test-1', 'admin-reviewer');
+      assert.ok(approved);
+      assert.strictEqual(approved.status, 'approved');
+      assert.strictEqual(approved.reviewer, 'admin-reviewer');
+
+      const req2 = await db.createBudgetExtensionRequest('req-test-2', 20000, 'Testing rejection', 'dev-2');
+      const rejectedReq = await db.rejectBudgetExtensionRequest('req-test-2', 'admin-reviewer');
+      assert.ok(rejectedReq);
+      assert.strictEqual(rejectedReq.status, 'rejected');
+      assert.strictEqual(rejectedReq.reviewer, 'admin-reviewer');
+    });
+  });
 });

@@ -13,6 +13,10 @@ export default function App() {
   // PLM Feedback & Gate Alignment States
   const [plmState, setPlmState] = useState<any>(null);
   const [ibpState, setIbpState] = useState<any>(null);
+  const [budgetExtensions, setBudgetExtensions] = useState<any[]>([]);
+  const [budgetExtensionAmount, setBudgetExtensionAmount] = useState<number>(10000);
+  const [budgetExtensionReason, setBudgetExtensionReason] = useState<string>('');
+  const [budgetExtensionLoading, setBudgetExtensionLoading] = useState(false);
   const [attestedClaims, setAttestedClaims] = useState<any>(null);
   const [pendingPatch, setPendingPatch] = useState<any>(null);
   const [driftState, setDriftState] = useState<any[]>([]);
@@ -284,7 +288,7 @@ export default function App() {
   // Fetch all data from backend
   const fetchData = useCallback(async () => {
     try {
-      const [txRes, receiptsRes, findingsRes, plmRes, ibpRes, claimsRes, patchRes, driftRes, logsRes, policyRes, configRes, consensusRes] = await Promise.all([
+      const [txRes, receiptsRes, findingsRes, plmRes, ibpRes, claimsRes, patchRes, driftRes, logsRes, policyRes, configRes, consensusRes, budgetExtensionsRes] = await Promise.all([
         fetch(`${API_BASE}/transactions`, { headers: getHeaders() }),
         fetch(`${API_BASE}/receipts`, { headers: getHeaders() }),
         fetch(`${API_BASE}/findings`, { headers: getHeaders() }),
@@ -296,7 +300,8 @@ export default function App() {
         fetch(`${API_BASE}/logs/commands`, { headers: getHeaders() }),
         fetch(`${API_BASE}/policy/active`, { headers: getHeaders() }),
         fetch(`${API_BASE}/system/config`, { headers: getHeaders() }),
-        fetch(`${API_BASE}/consensus/requests`, { headers: getHeaders() })
+        fetch(`${API_BASE}/consensus/requests`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/ibp/budget/extensions`, { headers: getHeaders() })
       ]);
 
       if (txRes.ok) setTransactions(await txRes.json());
@@ -310,6 +315,7 @@ export default function App() {
       if (logsRes.ok) setForensicLogs(await logsRes.json());
       if (configRes.ok) setSystemConfig(await configRes.json());
       if (consensusRes.ok) setConsensusRequests(await consensusRes.json());
+      if (budgetExtensionsRes.ok) setBudgetExtensions(await budgetExtensionsRes.json());
       if (policyRes.ok) {
         const data = await policyRes.json();
         setActivePolicyCode(data.code);
@@ -679,6 +685,13 @@ export default function App() {
               }
               return next;
             });
+          } else if (
+            wsEvent === 'budget_extension_created' ||
+            wsEvent === 'budget_extension_approved' ||
+            wsEvent === 'budget_extension_rejected' ||
+            wsEvent === 'ibp_state_updated'
+          ) {
+            fetchData();
           }
         } catch (err) {
           console.error('Failed to parse WS payload:', err);
@@ -1026,6 +1039,84 @@ export default function App() {
       alert('Failed to connect to Secure Gateway.');
     } finally {
       setAlignLoading(false);
+    }
+  };
+
+  // Create Budget Extension Request
+  const handleCreateBudgetExtensionRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (budgetExtensionAmount <= 0 || !budgetExtensionReason.trim()) return;
+    setBudgetExtensionLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/ibp/budget/request-extension`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({
+          requestedAmount: Number(budgetExtensionAmount),
+          reason: budgetExtensionReason
+        })
+      });
+      if (res.ok) {
+        setBudgetExtensionReason('');
+        fetchData();
+        setConsoleLines(prev => [
+          ...prev,
+          `💸 [IBP] Submitted Budget Extension Request: Amount: ${budgetExtensionAmount} | Reason: "${budgetExtensionReason}"`
+        ]);
+      } else {
+        const err = await res.json();
+        alert(`Failed to request budget extension: ${err.error || err.message || 'Unknown error'}`);
+      }
+    } catch (e: any) {
+      alert(`Error creating budget extension request: ${e.message}`);
+    } finally {
+      setBudgetExtensionLoading(false);
+    }
+  };
+
+  // Approve Budget Extension Request
+  const handleApproveBudgetExtension = async (id: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/ibp/budget/approve-extension`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ id })
+      });
+      if (res.ok) {
+        fetchData();
+        setConsoleLines(prev => [
+          ...prev,
+          `✅ [IBP] Budget Extension Approved for ID: ${id}. Active Token Budget expanded!`
+        ]);
+      } else {
+        const err = await res.json();
+        alert(`Failed to approve extension: ${err.error || err.message || 'Unknown error'}`);
+      }
+    } catch (e: any) {
+      alert(`Error approving extension: ${e.message}`);
+    }
+  };
+
+  // Reject Budget Extension Request
+  const handleRejectBudgetExtension = async (id: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/ibp/budget/reject-extension`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ id })
+      });
+      if (res.ok) {
+        fetchData();
+        setConsoleLines(prev => [
+          ...prev,
+          `❌ [IBP] Budget Extension Rejected for ID: ${id}`
+        ]);
+      } else {
+        const err = await res.json();
+        alert(`Failed to reject extension: ${err.error || err.message || 'Unknown error'}`);
+      }
+    } catch (e: any) {
+      alert(`Error rejecting extension: ${e.message}`);
     }
   };
 
@@ -2503,6 +2594,147 @@ export default function App() {
                     </div>
                   );
                 })()}
+              </div>
+            </div>
+
+            {/* Card 6: Interactive Admin Override & Budget Negotiation Console */}
+            <div className="secops-card animate-fade-in" style={{ gridColumn: 'span 3', borderStyle: 'solid', borderColor: 'rgba(243, 156, 18, 0.3)', background: 'rgba(243, 156, 18, 0.02)', marginTop: '1rem' }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.65rem' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.88rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--warning))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: 'drop-shadow(0 0 6px rgba(243,156,18,0.35))' }}>
+                      <circle cx="12" cy="12" r="10"/>
+                      <line x1="12" y1="8" x2="12" y2="12"/>
+                      <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                    Interactive Admin Override & Budget Negotiation Console
+                  </h4>
+                  <span className="status-badge status-pending" style={{ fontSize: '0.72rem', borderColor: 'rgba(243,156,18,0.3)', background: 'rgba(243,156,18,0.06)', color: 'hsl(var(--warning))' }}>
+                    Compliance REQ-300 Gating
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem' }}>
+                  {/* Left Side: Submit Request */}
+                  <div style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                    <h5 style={{ margin: 0, fontSize: '0.8rem', color: '#fff', fontWeight: 600 }}>Request Budget Extension</h5>
+                    <p style={{ margin: 0, fontSize: '0.74rem', color: 'hsl(var(--text-secondary))', lineHeight: '1.4' }}>
+                      If your autonomous agent runs out of tokens under zero-trust enforce mode, submit a request below.
+                    </p>
+                    <form onSubmit={handleCreateBudgetExtensionRequest} style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                      <div className="form-group">
+                        <label htmlFor="budgetAmt">Requested Token Increase Amount</label>
+                        <input 
+                          type="number" 
+                          id="budgetAmt" 
+                          className="form-control"
+                          value={budgetExtensionAmount}
+                          onChange={e => setBudgetExtensionAmount(Number(e.target.value))}
+                          required
+                          min={1}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="budgetReason">Business & Technical Rationale</label>
+                        <textarea 
+                          id="budgetReason" 
+                          className="form-control"
+                          placeholder="e.g. Need additional budget to run compliance validation cycle for requirement REQ-300"
+                          value={budgetExtensionReason}
+                          onChange={e => setBudgetExtensionReason(e.target.value)}
+                          required
+                          style={{ height: '3.5rem', resize: 'none' }}
+                        />
+                      </div>
+                      <button 
+                        type="submit" 
+                        className="btn btn-secondary" 
+                        disabled={budgetExtensionLoading || authRole === 'unauthenticated'}
+                        style={{ width: '100%', borderColor: 'rgba(243, 156, 18, 0.4)', color: 'hsl(var(--warning))', background: 'rgba(243, 156, 18, 0.05)', cursor: 'pointer' }}
+                      >
+                        {budgetExtensionLoading ? 'Submitting request...' : 'Submit Extension Request'}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Right Side: Active requests queue */}
+                  <div style={{ flex: '2 2 400px', display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                    <h5 style={{ margin: 0, fontSize: '0.8rem', color: '#fff', fontWeight: 600 }}>Active Extension Requests Queue</h5>
+                    <div style={{ maxHeight: '280px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                      {budgetExtensions.length === 0 ? (
+                        <div style={{ padding: '2rem', textAlign: 'center', color: 'hsl(var(--text-muted))', fontSize: '0.78rem', background: 'rgba(0,0,0,0.15)', borderRadius: '6px' }}>
+                          No budget extension requests recorded.
+                        </div>
+                      ) : (
+                        budgetExtensions.map((req) => (
+                          <div 
+                            key={req.id} 
+                            style={{ 
+                              display: 'flex', 
+                              justifyContent: 'space-between', 
+                              alignItems: 'center', 
+                              gap: '1rem',
+                              background: 'rgba(0,0,0,0.2)', 
+                              padding: '0.65rem 0.85rem', 
+                              borderRadius: '6px', 
+                              border: '1px solid hsl(var(--border-color))' 
+                            }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', flex: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#fff' }}>+{req.requestedAmount.toLocaleString()} Tokens</span>
+                                <span style={{ fontSize: '0.62rem', color: 'hsl(var(--text-muted))' }}>by {req.applicant}</span>
+                                <span className={`status-badge status-${req.status}`} style={{ fontSize: '0.6rem', padding: '0.05rem 0.35rem' }}>{req.status}</span>
+                              </div>
+                              <span style={{ fontSize: '0.72rem', color: 'hsl(var(--text-secondary))', fontStyle: 'italic' }}>"{req.reason}"</span>
+                              {req.reviewer && (
+                                <span style={{ fontSize: '0.64rem', color: 'hsl(var(--text-muted))' }}>
+                                  Reviewed by {req.reviewer} at {new Date(req.reviewedAt).toLocaleTimeString()}
+                                </span>
+                              )}
+                            </div>
+                            {req.status === 'pending' && (
+                              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                <button 
+                                  className="btn btn-secondary"
+                                  onClick={() => handleApproveBudgetExtension(req.id)}
+                                  disabled={authRole !== 'admin'}
+                                  style={{ 
+                                    padding: '0.3rem 0.6rem', 
+                                    fontSize: '0.7rem', 
+                                    background: authRole === 'admin' ? 'rgba(0,255,102,0.08)' : 'transparent', 
+                                    color: authRole === 'admin' ? '#00ff66' : 'hsl(var(--text-muted))',
+                                    borderColor: authRole === 'admin' ? 'rgba(0,255,102,0.3)' : 'transparent',
+                                    cursor: authRole === 'admin' ? 'pointer' : 'not-allowed'
+                                  }}
+                                  title={authRole !== 'admin' ? 'Requires Administrator Role' : 'Approve increase'}
+                                >
+                                  Approve
+                                </button>
+                                <button 
+                                  className="btn btn-secondary"
+                                  onClick={() => handleRejectBudgetExtension(req.id)}
+                                  disabled={authRole !== 'admin'}
+                                  style={{ 
+                                    padding: '0.3rem 0.6rem', 
+                                    fontSize: '0.7rem', 
+                                    background: authRole === 'admin' ? 'rgba(255,107,107,0.08)' : 'transparent', 
+                                    color: authRole === 'admin' ? 'hsl(var(--danger))' : 'hsl(var(--text-muted))',
+                                    borderColor: authRole === 'admin' ? 'rgba(255,107,107,0.3)' : 'transparent',
+                                    cursor: authRole === 'admin' ? 'pointer' : 'not-allowed'
+                                  }}
+                                  title={authRole !== 'admin' ? 'Requires Administrator Role' : 'Reject increase'}
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 

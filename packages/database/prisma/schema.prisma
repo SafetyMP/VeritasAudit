@@ -106,5 +106,17 @@ model SystemConfig {
   agentTokenBudget    Float    @default(1000.0)
 }
 
+model BudgetExtensionRequest {
+  id              String    @id
+  createdAt       DateTime  @default(now())
+  requestedAmount Float
+  reason          String
+  applicant       String
+  status          String    // 'pending' | 'approved' | 'rejected'
+  reviewer        String?
+  reviewedAt      DateTime?
+}
+
+
 
 

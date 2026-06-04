@@ -239,6 +239,11 @@ export class IBPComplianceTracker {
     return this.state.tokensConsumed <= this.state.tokenBudget;
   }
 
+  public addTokenBudget(amount: number) {
+    this.state.tokenBudget += amount;
+    this.saveState();
+  }
+
   public clearTasks() {
     this.state.specializedTasksExecuted = [];
     this.state.genericTasksExecuted = [];
@@ -1616,6 +1621,93 @@ app.get('/api/ibp/state', requireAuth(['developer', 'admin', 'auditor']), (req, 
     res.json(ibpTracker.getState());
   } catch (error: any) {
     res.status(500).json({ error: 'Failed to retrieve IBP state' });
+  }
+});
+
+// GET /api/ibp/budget/extensions - List all budget extension requests (Role: developer, admin, auditor)
+app.get('/api/ibp/budget/extensions', requireAuth(['developer', 'admin', 'auditor']), async (req, res) => {
+  try {
+    const list = await db.getBudgetExtensionRequests();
+    res.json(list);
+  } catch (error: any) {
+    log('error', 'Failed to retrieve budget extensions', error.message);
+    res.status(500).json({ error: 'Failed to retrieve budget extensions' });
+  }
+});
+
+// POST /api/ibp/budget/request-extension - Request a budget increase (Role: developer, admin)
+app.post('/api/ibp/budget/request-extension', requireAuth(['developer', 'admin']), async (req, res) => {
+  try {
+    const { requestedAmount, reason } = req.body;
+    if (!requestedAmount || typeof requestedAmount !== 'number' || requestedAmount <= 0) {
+      res.status(400).json({ error: 'Invalid or missing requestedAmount' });
+      return;
+    }
+    if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
+      res.status(400).json({ error: 'Invalid or missing reason' });
+      return;
+    }
+    const applicant = (req as AuthenticatedRequest).user?.email || (req as AuthenticatedRequest).user?.id || 'developer';
+    const id = `ext_${Math.random().toString(36).substr(2, 9)}`;
+    const newRequest = await db.createBudgetExtensionRequest(id, requestedAmount, reason, applicant);
+    
+    broadcastWS('budget_extension_created', newRequest);
+    res.status(201).json(newRequest);
+  } catch (error: any) {
+    log('error', 'Failed to create budget extension request', error.message);
+    res.status(500).json({ error: 'Failed to create budget extension request' });
+  }
+});
+
+// POST /api/ibp/budget/approve-extension - Approve a request, increasing the active budget (Role: admin only)
+app.post('/api/ibp/budget/approve-extension', requireAuth(['admin']), async (req, res) => {
+  try {
+    const { id } = req.body;
+    if (!id) {
+      res.status(400).json({ error: 'Missing budget extension request ID' });
+      return;
+    }
+    const reviewer = (req as AuthenticatedRequest).user?.email || (req as AuthenticatedRequest).user?.id || 'admin';
+    const approvedRequest = await db.approveBudgetExtensionRequest(id, reviewer);
+    if (!approvedRequest) {
+      res.status(404).json({ error: 'Budget extension request not found or not pending' });
+      return;
+    }
+    
+    // Dynamically update the IBP compliance tracker's token budget
+    ibpTracker.addTokenBudget(approvedRequest.requestedAmount);
+    
+    broadcastWS('budget_extension_approved', approvedRequest);
+    broadcastWS('ibp_state_updated', ibpTracker.getState());
+    
+    res.json({ message: 'Budget extension request approved successfully', request: approvedRequest });
+  } catch (error: any) {
+    log('error', 'Failed to approve budget extension request', error.message);
+    res.status(500).json({ error: 'Failed to approve budget extension request' });
+  }
+});
+
+// POST /api/ibp/budget/reject-extension - Reject a budget extension request (Role: admin only)
+app.post('/api/ibp/budget/reject-extension', requireAuth(['admin']), async (req, res) => {
+  try {
+    const { id } = req.body;
+    if (!id) {
+      res.status(400).json({ error: 'Missing budget extension request ID' });
+      return;
+    }
+    const reviewer = (req as AuthenticatedRequest).user?.email || (req as AuthenticatedRequest).user?.id || 'admin';
+    const rejectedRequest = await db.rejectBudgetExtensionRequest(id, reviewer);
+    if (!rejectedRequest) {
+      res.status(404).json({ error: 'Budget extension request not found or not pending' });
+      return;
+    }
+    
+    broadcastWS('budget_extension_rejected', rejectedRequest);
+    
+    res.json({ message: 'Budget extension request rejected successfully', request: rejectedRequest });
+  } catch (error: any) {
+    log('error', 'Failed to reject budget extension request', error.message);
+    res.status(500).json({ error: 'Failed to reject budget extension request' });
   }
 });
 
