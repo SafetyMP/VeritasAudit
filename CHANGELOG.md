@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/SafetyMP/FidusGate/compare/v1.3.0...v1.3.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* **harness:** resolve patch mismatch, correct sed header pattern, optimize copying and watcher subprocess calls ([88d6693](https://github.com/SafetyMP/FidusGate/commit/88d6693d5848f51e829709823cffff2e3be62307))
+
 # [1.3.0](https://github.com/SafetyMP/FidusGate/compare/v1.2.0...v1.3.0) (2026-05-31)
 
 
