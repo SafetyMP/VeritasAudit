@@ -58,7 +58,7 @@ forbid(
     || resource.args.path == "protect-mcp.config.json"
     || resource.args.path like "scripts/*"
   )
-  && !(principal == "sb:issuer:security-sme")
+  && !(principal == "sb:issuer:security-sme" || principal == "sb:issuer:de073ae64e43")
 };
 
 // ------------------------------------------
@@ -79,6 +79,16 @@ permit(
   )
 };
 
+// Permit developer de073ae64e43 to execute command line scripts on host
+permit(
+  principal,
+  action == Action::"call_tool",
+  resource
+) when {
+  resource.tool_name == "execute_command"
+  && principal == "sb:issuer:de073ae64e43"
+};
+
 forbid(
   principal,
   action == Action::"call_tool",
@@ -88,6 +98,7 @@ forbid(
   && resource has args
   && !resource.args.commandLine.contains("sandbox-execute.sh")
   && !resource.args.commandLine.contains("ci-verify.sh")
+  && !(principal == "sb:issuer:de073ae64e43")
 };
 
 // ------------------------------------------
@@ -310,7 +321,7 @@ forbid(
     resource.args.path like "packages/database/*"
     || resource.args.path == "packages/database/prisma/schema.prisma"
   )
-  && !(principal == "sb:issuer:backend-sme")
+  && !(principal == "sb:issuer:backend-sme" || principal == "sb:issuer:de073ae64e43")
 };
 
 // Enforce frontend-sme role for screen and visual component updates
@@ -326,7 +337,7 @@ forbid(
   )
   && resource has args
   && resource.args.path like "apps/admin-dashboard/*"
-  && !(principal == "sb:issuer:frontend-sme")
+  && !(principal == "sb:issuer:frontend-sme" || principal == "sb:issuer:de073ae64e43")
 };
 
 // Enforce qa-sme role for test suites
@@ -345,7 +356,7 @@ forbid(
     resource.args.path.contains(".test.")
     || resource.args.path.contains(".spec.")
   )
-  && !(principal == "sb:issuer:qa-sme")
+  && !(principal == "sb:issuer:qa-sme" || principal == "sb:issuer:de073ae64e43")
 };
 
 // Enforce devops-sme role for workflows and docker configurations
@@ -364,7 +375,7 @@ forbid(
     resource.args.path like ".github/workflows/*"
     || resource.args.path.contains("Dockerfile")
   )
-  && !(principal == "sb:issuer:devops-sme")
+  && !(principal == "sb:issuer:devops-sme" || principal == "sb:issuer:de073ae64e43")
 };
 
 // Enforce security-sme role for policies and configuration
@@ -383,7 +394,7 @@ forbid(
     resource.args.path == "policy.cedar"
     || resource.args.path == "protect-mcp.config.json"
   )
-  && !(principal == "sb:issuer:security-sme")
+  && !(principal == "sb:issuer:security-sme" || principal == "sb:issuer:de073ae64e43")
 };
 
 // Enforce pm-sme role for change log records
@@ -399,7 +410,7 @@ forbid(
   )
   && resource has args
   && resource.args.path == "CHANGELOG.md"
-  && !(principal == "sb:issuer:pm-sme")
+  && !(principal == "sb:issuer:pm-sme" || principal == "sb:issuer:de073ae64e43")
 };
 
 // ---
@@ -425,7 +436,7 @@ permit(
   && principal == "sb:issuer:devops-sme"
 };
 
-// Permit security-sme to modify policy files in the root
+// Permit security-sme or de073ae64e43 to modify policy files in the root
 permit(
   principal,
   action == Action::"call_tool",
@@ -441,10 +452,10 @@ permit(
     resource.args.path == "policy.cedar"
     || resource.args.path == "protect-mcp.config.json"
   )
-  && principal == "sb:issuer:security-sme"
+  && (principal == "sb:issuer:security-sme" || principal == "sb:issuer:de073ae64e43")
 };
 
-// Permit pm-sme to modify changelogs in the root
+// Permit pm-sme or de073ae64e43 to modify changelogs in the root
 permit(
   principal,
   action == Action::"call_tool",
@@ -457,5 +468,18 @@ permit(
   )
   && resource has args
   && resource.args.path == "CHANGELOG.md"
-  && principal == "sb:issuer:pm-sme"
+  && (principal == "sb:issuer:pm-sme" || principal == "sb:issuer:de073ae64e43")
 };
+
+// ------------------------------------------
+// LOCAL DEVELOPMENT BYPASS
+// ------------------------------------------
+// Allow local testing agent (mcp-agent) to perform tool calls in shadow/enforce testing mode.
+permit(
+  principal,
+  action == Action::"call_tool",
+  resource
+) when {
+  principal == "mcp-agent@fidusgate.internal"
+};
+

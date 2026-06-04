@@ -47,6 +47,15 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState(localStorage.getItem('fidusgate_email') || 'admin@fidusgate.internal');
   const [authLoading, setAuthLoading] = useState(false);
 
+  // Dynamically resolve request headers with JWT Bearer Token
+  const getHeaders = useCallback(() => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    return headers;
+  }, [authToken]);
+
   // Form states
   const [txSender, setTxSender] = useState('');
   const [txRecipient, setTxRecipient] = useState('');
@@ -82,14 +91,108 @@ export default function App() {
   // System Config & Cedar Co-Pilot States
   const [systemConfig, setSystemConfig] = useState<any>({ circuitBreakerActive: false, agentTokenBudget: 1000.0 });
   const [systemConfigLoading, setSystemConfigLoading] = useState(false);
-  const [copilotPrompt, setCopilotPrompt] = useState('');
-  const [copilotExplanation, setCopilotExplanation] = useState('');
-  const [copilotCedarCode, setCopilotCedarCode] = useState('');
-  const [copilotLoading, setCopilotLoading] = useState(false);
-  const [copilotApplyLoading, setCopilotApplyLoading] = useState(false);
-  const [copilotFirewallBlocked, setCopilotFirewallBlocked] = useState<boolean>(false);
-  const [copilotFirewallReason, setCopilotFirewallReason] = useState<string>('');
-  const [copilotSimilarityScore, setCopilotSimilarityScore] = useState<number>(0);
+  const [chatApplyLoading, setChatApplyLoading] = useState(false);
+
+  // Conversational Chat Co-Pilot States
+  interface ChatMessage {
+    id: string;
+    sender: 'user' | 'assistant';
+    timestamp: string;
+    text: string;
+    cedarCode?: string;
+  }
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Guided Tour States
+  const [tourActive, setTourActive] = useState(false);
+  const [tourStep, setTourStep] = useState(0);
+
+  const tourSteps = [
+    {
+      targetId: 'brand-header',
+      title: '⚖️ Welcome to FidusGate!',
+      body: 'FidusGate is a zero-trust runtime policy and security verification gateway for autonomous AI agents. Let\'s take a 2-minute tour of its capabilities.',
+      position: 'bottom'
+    },
+    {
+      targetId: 'oidc-widget',
+      title: '🔑 Federated Identity Widget (OIDC)',
+      body: 'Authenticate as a Developer, Admin, or Auditor. The gateway validates actions against Cedar policies using your role identity.',
+      position: 'bottom'
+    },
+    {
+      targetId: 'circuit-breaker-switch',
+      title: '🚨 Emergency Circuit Breaker',
+      body: 'Administrators can instantly freeze all autonomous agent activities by toggling the circuit breaker stop button.',
+      position: 'bottom'
+    },
+    {
+      targetId: 'copilot-playground',
+      title: '🤖 Conversational Cedar Co-Pilot',
+      body: 'Translate natural language security rules to valid Cedar syntax. Try chatting with Gemini to design new system guidelines!',
+      position: 'right'
+    },
+    {
+      targetId: 'policy-simulator',
+      title: '🧪 Live Cedar Policy Simulator',
+      body: 'Dry-run simulated agent tool-calls against production or draft rules. Verify ALLOW or DENY outcomes interactively.',
+      position: 'left'
+    },
+    {
+      targetId: 'syscall-monitor',
+      title: '📡 Live Kernel System Call Auditing',
+      body: 'Monitor simulated system calls in real-time. Unauthorized attempts trigger automatic lockouts to protect workspace integrity.',
+      position: 'top'
+    }
+  ];
+
+  const handleTourNext = () => {
+    if (tourStep < tourSteps.length - 1) {
+      if (tourSteps[tourStep + 1].targetId === 'copilot-playground' || tourSteps[tourStep + 1].targetId === 'policy-simulator') {
+        setActiveTab('policy');
+      }
+      if (tourSteps[tourStep + 1].targetId === 'syscall-monitor') {
+        setActiveTab('sandbox');
+      }
+      setTourStep(prev => prev + 1);
+    } else {
+      setTourActive(false);
+    }
+  };
+
+  const handleTourPrev = () => {
+    if (tourStep > 0) {
+      if (tourSteps[tourStep - 1].targetId === 'copilot-playground' || tourSteps[tourStep - 1].targetId === 'policy-simulator') {
+        setActiveTab('policy');
+      }
+      if (tourSteps[tourStep - 1].targetId === 'syscall-monitor') {
+        setActiveTab('sandbox');
+      }
+      setTourStep(prev => prev - 1);
+    }
+  };
+
+  const getTourTooltipStyle = (step: number) => {
+    switch (step) {
+      case 0: // Brand Header
+        return { top: '160px', left: '50px' };
+      case 1: // OIDC identity widget
+        return { top: '220px', right: '50px' };
+      case 2: // Emergency Kill-Switch
+        return { top: '480px', left: '50px' };
+      case 3: // Co-Pilot Chat
+        return { top: '350px', left: '50px' };
+      case 4: // Simulator
+        return { top: '350px', left: '42%' };
+      case 5: // Syscall Monitor
+        return { bottom: '150px', right: '50px' };
+      default:
+        return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
+    }
+  };
 
   // Consensus Gating States
   const [consensusRequests, setConsensusRequests] = useState<any[]>([]);
@@ -116,14 +219,67 @@ export default function App() {
     consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [consoleLines]);
 
-  // Dynamically resolve request headers with JWT Bearer Token
-  const getHeaders = useCallback(() => {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // Load chat history from backend on token/auth change
+  useEffect(() => {
+    const fetchChatHistory = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/policy/chat-history`, { headers: getHeaders() });
+        if (res.ok) {
+          setChatMessages(await res.json());
+        }
+      } catch (err) {
+        console.error('Failed to fetch chat history:', err);
+      }
+    };
     if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`;
+      fetchChatHistory();
     }
-    return headers;
-  }, [authToken]);
+  }, [authToken, getHeaders]);
+
+  // Auto-scroll chat container
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  // Auto-trigger tour on first load
+  useEffect(() => {
+    const hasSeenTour = localStorage.getItem('fidusgate_seen_tour');
+    if (!hasSeenTour) {
+      const timer = setTimeout(() => {
+        setTourStep(0);
+        setTourActive(true);
+        localStorage.setItem('fidusgate_seen_tour', 'true');
+      }, 1500);
+      return () => {
+        clearTimeout(timer);
+      };
+    }
+    return;
+  }, []);
+
+  // Update spotlight targets on active step change
+  useEffect(() => {
+    if (!tourActive) {
+      document.querySelectorAll('.tour-highlight').forEach(el => {
+        el.classList.remove('tour-highlight');
+      });
+      return;
+    }
+
+    document.querySelectorAll('.tour-highlight').forEach(el => {
+      el.classList.remove('tour-highlight');
+    });
+
+    const activeStep = tourSteps[tourStep];
+    if (activeStep && activeStep.targetId) {
+      const target = document.getElementById(activeStep.targetId);
+      if (target) {
+        target.classList.add('tour-highlight');
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [tourActive, tourStep]);
+
 
   // Fetch all data from backend
   const fetchData = useCallback(async () => {
@@ -511,6 +667,18 @@ export default function App() {
               }
               return a;
             }));
+          } else if (wsEvent === 'chat_message_created') {
+            setChatMessages(prev => {
+              const { userMessage, assistantMessage } = data;
+              let next = [...prev];
+              if (!next.some(m => m.id === userMessage.id)) {
+                next.push(userMessage);
+              }
+              if (!next.some(m => m.id === assistantMessage.id)) {
+                next.push(assistantMessage);
+              }
+              return next;
+            });
           }
         } catch (err) {
           console.error('Failed to parse WS payload:', err);
@@ -603,6 +771,7 @@ export default function App() {
     setReceipts([]);
     setFindings([]);
     setPlmState(null);
+    setChatMessages([]);
     
     setConsoleLines(prev => [
       ...prev,
@@ -652,104 +821,7 @@ export default function App() {
     }
   };
 
-  // Submit request to Cedar Policy Co-Pilot
-  const handleCopilotSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!copilotPrompt.trim()) return;
-    
-    setCopilotLoading(true);
-    setCopilotExplanation('');
-    setCopilotCedarCode('');
-    setCopilotFirewallBlocked(false);
-    setCopilotFirewallReason('');
-    
-    try {
-      const res = await fetch(`${API_BASE}/policy/co-pilot`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ prompt: copilotPrompt })
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        setCopilotCedarCode(data.cedarCode);
-        setCopilotExplanation(data.explanation);
-        setCopilotSimilarityScore(data.similarityScore || 0.12);
-        
-        setConsoleLines(prev => [
-          ...prev,
-          `🤖 [Co-Pilot] Translated natural language prompt successfully.`,
-          `📝 Explanation: ${data.explanation}`
-        ]);
-      } else {
-        const err = await res.json();
-        if (res.status === 400 && err.error === 'Prompt validation failed') {
-          setCopilotFirewallBlocked(true);
-          setCopilotFirewallReason(err.message || 'Adversarial jailbreak patterns detected.');
-          setCopilotSimilarityScore(err.similarityScore || 0.85);
-          setConsoleLines(prev => [
-            ...prev,
-            `🛡️ [PROMPT FIREWALL BLOCKED]: Intercepted malicious injection attempt inside prompt: "${err.message || 'Adversarial jailbreak patterns detected.'}"`
-          ]);
-        } else {
-          alert(`Co-Pilot translation failed: ${err.error || err.message}`);
-        }
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert('Network error contacting Policy Co-Pilot.');
-    } finally {
-      setCopilotLoading(false);
-    }
-  };
 
-  // Commit and Hot-Apply Co-Pilot generated Cedar Policy to Disk
-  const handleApplyCopilotPolicy = async () => {
-    if (authRole !== 'admin') {
-      alert('Unauthorized: Only Admin users can commit policy changes to production disk.');
-      return;
-    }
-    
-    if (!copilotCedarCode) {
-      alert('No policy code generated. Please translate a prompt first.');
-      return;
-    }
-    
-    if (!confirm('Are you sure you want to write this policy directly to production (policy.cedar)?')) {
-      return;
-    }
-    
-    setCopilotApplyLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/policy/apply`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ policyCode: copilotCedarCode })
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        setConsoleLines(prev => [
-          ...prev,
-          `✅ [SecOps] Policy Co-Pilot rule applied successfully! Committed to policy.cedar.`,
-          `🛡️ Active rule count reloaded: ${data.rulesCount}`
-        ]);
-        fetchData();
-        // Clear copilot output upon success
-        setCopilotCedarCode('');
-        setCopilotExplanation('');
-        setCopilotPrompt('');
-      } else {
-        const err = await res.json();
-        alert(`Failed to apply policy: ${err.error || err.message}`);
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert('Network error committing policy.');
-    } finally {
-      setCopilotApplyLoading(false);
-    }
-  };
 
   // Approve a pending multi-agent consensus action
   const handleApproveConsensus = async (actionId: string) => {
@@ -1893,7 +1965,7 @@ export default function App() {
                 ) : null}
 
                 {/* Emergency Kill-Switch UI */}
-                <div style={{ marginTop: '1.2rem', borderTop: '1px solid hsl(var(--border-color))', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div id="circuit-breaker-switch" style={{ marginTop: '1.2rem', borderTop: '1px solid hsl(var(--border-color))', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <h5 style={{ margin: 0, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'hsl(var(--text-secondary))' }}>
                     Global Circuit Breaker
                   </h5>
@@ -2729,206 +2801,187 @@ export default function App() {
 
   const renderPolicyTab = () => {
     return (
-      <div className="dashboard-grid animate-fade-in" style={{ gridTemplateColumns: '1.1fr 1.2fr 1fr' }}>
-        {/* Left Column: Gemini Cedar Co-Pilot Chat Playground */}
-        <section className="glass-panel animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: 0 }}>
+      <div className="dashboard-grid animate-fade-in" style={{ gridTemplateColumns: '1.2fr 1.1fr 1fr' }}>
+        {/* Left Column: Conversational Policy Co-Pilot Chat */}
+        <section id="copilot-playground" className="glass-panel animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: 0 }}>
           <div className="card-header" style={{ borderBottom: '1px solid hsl(var(--border-color))', paddingBottom: '0.75rem' }}>
             <h2 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
               <span style={{ color: 'hsl(var(--primary))', filter: 'drop-shadow(0 0 8px hsla(var(--primary), 0.45))', display: 'flex', alignItems: 'center' }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2a10 10 0 0 1 7.54 16.59c-.24.25-.61.35-.95.24A4.95 4.95 0 0 0 14 14H10a4.95 4.95 0 0 0-4.59 4.83c-.34.11-.71.01-.95-.24A10 10 0 0 1 12 2Z"/>
-                  <circle cx="12" cy="10" r="3"/>
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                 </svg>
               </span>
-              Gemini Cedar Co-Pilot Playground
+              Conversational Policy Co-Pilot
             </h2>
-            <span className="status-badge status-completed" style={{ background: 'hsla(var(--primary), 0.08)', borderColor: 'hsla(var(--primary), 0.3)', color: 'hsl(var(--primary))' }}>
-              Gemini Pro Active
+            <span className="status-badge status-completed" style={{ background: 'hsla(var(--success), 0.08)', borderColor: 'hsla(var(--success), 0.3)', color: 'hsl(var(--success))' }}>
+              Gemini Active
             </span>
           </div>
 
-          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0 0.5rem' }}>
-            <p style={{ margin: 0, fontSize: '0.78rem', color: 'hsl(var(--text-secondary))', lineHeight: 1.45 }}>
-              Use natural language to describe security rules. Gemini will translate them to Cedar policy blocks, which you can test and hot-apply.
-            </p>
-
-            {copilotFirewallBlocked && (
-              <div 
-                className="animate-pulse" 
-                style={{ 
-                  background: 'rgba(255, 107, 107, 0.08)', 
-                  border: '1px solid rgba(255, 107, 107, 0.3)', 
-                  borderRadius: '8px', 
-                  padding: '0.75rem 1rem', 
-                  color: 'hsl(var(--danger))', 
-                  fontSize: '0.76rem', 
-                  lineHeight: 1.4,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.25rem',
-                  boxShadow: '0 0 15px rgba(255, 107, 107, 0.15)'
-                }}
-              >
-                <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                    <line x1="12" y1="9" x2="12" y2="13"/>
-                    <line x1="12" y1="17" x2="12.01" y2="17"/>
-                  </svg>
-                  🛡️ [PROMPT FIREWALL BLOCKED]
+          <div className="chat-container">
+            <div className="chat-messages">
+              {chatMessages.map((msg, idx) => (
+                <div 
+                  key={msg.id || idx} 
+                  className={`chat-bubble ${msg.sender === 'user' ? 'chat-bubble-user' : 'chat-bubble-assistant'}`}
+                >
+                  <div style={{ wordBreak: 'break-word' }}>{msg.text}</div>
+                  
+                  {msg.cedarCode && (
+                    <div className="chat-policy-box">
+                      <div className="chat-policy-header">
+                        <span>Suggested Cedar Policy</span>
+                        <span style={{ fontSize: '0.6rem', color: '#888' }}>WASM Validated</span>
+                      </div>
+                      <pre className="chat-policy-code">{msg.cedarCode}</pre>
+                      <div className="chat-policy-actions">
+                        <button 
+                          className="chat-policy-btn chat-policy-btn-sim"
+                          onClick={() => {
+                            setSimDraftPolicy(msg.cedarCode || '');
+                            setSimOverrideMode(true);
+                            setConsoleLines(prev => [
+                              ...prev,
+                              `🤖 [Co-Pilot] Chat suggested policy successfully loaded into visual simulator override draft.`
+                            ]);
+                            alert('Policy loaded in Visual Draft Simulator! You can now run evaluation dry-runs.');
+                          }}
+                        >
+                          Simulate Draft
+                        </button>
+                        {authRole === 'admin' && (
+                          <button 
+                            className="chat-policy-btn chat-policy-btn-apply"
+                            onClick={async () => {
+                              if (!confirm('Apply this policy to active production policy.cedar?')) return;
+                              try {
+                                setChatApplyLoading(true);
+                                const res = await fetch(`${API_BASE}/policy/apply`, {
+                                  method: 'POST',
+                                  headers: getHeaders(),
+                                  body: JSON.stringify({ policyCode: msg.cedarCode })
+                                });
+                                if (res.ok) {
+                                  const data = await res.json();
+                                  setConsoleLines(prev => [
+                                    ...prev,
+                                    `✅ [SecOps] Policy applied successfully from chat recommendation! Committed to policy.cedar.`,
+                                    `🛡️ Active rule count reloaded: ${data.rulesCount}`
+                                  ]);
+                                  fetchData();
+                                } else {
+                                  const err = await res.json();
+                                  alert(`Failed to apply policy: ${err.error || err.message}`);
+                                }
+                              } catch (err: any) {
+                                alert(`Error applying policy: ${err.message}`);
+                              } finally {
+                                setChatApplyLoading(false);
+                              }
+                            }}
+                            disabled={chatApplyLoading}
+                          >
+                            {chatApplyLoading ? 'Applying...' : 'Commit to Prod'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  <div className="chat-bubble-meta">
+                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </div>
                 </div>
-                <div>{copilotFirewallReason}</div>
-              </div>
-            )}
-
-            <form onSubmit={handleCopilotSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label htmlFor="copilotPrompt" style={{ fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'hsl(var(--text-secondary))', display: 'block', marginBottom: '0.4rem' }}>
-                  Define security rule requirements:
-                </label>
-                <textarea
-                  id="copilotPrompt"
-                  className="form-control"
-                  style={{
-                    height: '80px',
-                    fontFamily: 'inherit',
-                    fontSize: '0.8rem',
-                    resize: 'none',
-                    background: 'rgba(0,0,0,0.3)',
-                    border: '1px solid hsl(var(--border-color))',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    padding: '0.6rem 0.8rem'
-                  }}
-                  value={copilotPrompt}
-                  onChange={e => setCopilotPrompt(e.target.value)}
-                  placeholder="e.g., Permit security-sme to read and write files under path starting with 'policy'..."
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={copilotLoading || !copilotPrompt.trim()}
-                style={{
-                  width: '100%',
-                  background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsla(var(--primary), 0.7) 100%)',
-                  padding: '0.5rem',
-                  fontSize: '0.8rem',
-                  fontWeight: '600'
-                }}
-              >
-                {copilotLoading ? 'Translating via Gemini...' : 'Translate to Cedar'}
-              </button>
-            </form>
-
-            {/* Translation Output Area */}
-            {(copilotCedarCode || copilotExplanation) && (
-              <div 
-                className="animate-fade-in" 
-                style={{ 
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  gap: '0.75rem',
-                  background: 'rgba(255, 255, 255, 0.02)',
-                  border: '1px solid hsla(var(--primary), 0.25)',
-                  borderRadius: '10px',
-                  padding: '0.85rem'
-                }}
-              >
-                <div>
-                  <span style={{ fontSize: '0.7rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'hsl(var(--primary))', display: 'block', marginBottom: '0.2rem' }}>
-                    Generated Policy Block
-                  </span>
-                  <pre style={{ margin: 0, padding: '0.5rem 0.75rem', background: '#020306', color: '#00ff66', fontFamily: 'monospace', fontSize: '0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.03)', overflowX: 'auto', whiteSpace: 'pre-wrap', maxHeight: '140px' }}>
-                    {copilotCedarCode}
-                  </pre>
+              ))}
+              
+              {chatLoading && (
+                <div className="chat-typing-bubble">
+                  <div className="typing-dot" />
+                  <div className="typing-dot" />
+                  <div className="typing-dot" />
                 </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
 
-                <div>
-                  <span style={{ fontSize: '0.7rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'hsl(var(--text-secondary))', display: 'block', marginBottom: '0.2rem' }}>
-                    Co-Pilot Rationale
-                  </span>
-                  <p style={{ margin: 0, fontSize: '0.74rem', color: 'hsl(var(--text-secondary))', lineHeight: 1.45 }}>
-                    {copilotExplanation}
-                  </p>
-                </div>
+            <form 
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!chatInput.trim() || chatLoading) return;
+                const promptVal = chatInput;
+                setChatInput('');
+                setChatLoading(true);
+                
+                try {
+                  // Add user message to UI immediately for responsive feel
+                  const tempUserMsg: ChatMessage = {
+                    id: `msg_temp_u`,
+                    sender: 'user',
+                    timestamp: new Date().toISOString(),
+                    text: promptVal
+                  };
+                  setChatMessages(prev => [...prev, tempUserMsg]);
 
-                {/* Co-Pilot Action Center */}
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
-                  {/* Apply as Draft Overlay */}
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => {
-                      setSimDraftPolicy(copilotCedarCode);
-                      setSimOverrideMode(true);
+                  const res = await fetch(`${API_BASE}/policy/chat`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify({ prompt: promptVal })
+                  });
+
+                  if (res.ok) {
+                    await res.json();
+                    const historyRes = await fetch(`${API_BASE}/policy/chat-history`, { headers: getHeaders() });
+                    if (historyRes.ok) {
+                      setChatMessages(await historyRes.json());
+                    }
+                  } else {
+                    const err = await res.json();
+                    if (res.status === 400 && err.error === 'Prompt validation failed') {
                       setConsoleLines(prev => [
                         ...prev,
-                        `🤖 [Co-Pilot] Generated policy block successfully loaded in visual draft sandbox simulator overlay.`
+                        `🛡️ [CHAT FIREWALL BLOCKED]: Intercepted malicious injection attempt: "${err.message || 'Adversarial jailbreak patterns detected.'}"`
                       ]);
-                      alert('Loaded in Visual Draft Simulator! You can now run "Evaluate Permission Gate" in the simulator to test permissions.');
-                    }}
-                    style={{ flexGrow: 1, padding: '0.4rem', fontSize: '0.74rem', border: '1px solid hsla(var(--primary), 0.3)', color: 'hsl(var(--primary))', background: 'rgba(0,0,0,0.2)', cursor: 'pointer' }}
-                  >
-                    Simulate Draft
-                  </button>
-
-                  {/* Apply to Production */}
-                  {authRole === 'admin' && (
-                    <button
-                      className="btn btn-primary animate-glow-green-border"
-                      onClick={handleApplyCopilotPolicy}
-                      disabled={copilotApplyLoading}
-                      style={{ flexGrow: 1, padding: '0.4rem', fontSize: '0.74rem', border: '1px solid hsla(var(--success), 0.4)', color: '#00ff66', background: 'rgba(0,0,0,0.2)', cursor: 'pointer' }}
-                    >
-                      {copilotApplyLoading ? 'Applying...' : 'Commit to Prod'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Cosine Similarity Vector Distance Indicator */}
-            {(copilotCedarCode || copilotExplanation || copilotFirewallBlocked) && (
-              <div style={{ marginTop: '0.8rem', padding: '0.7rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid rgba(52, 152, 219, 0.15)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#3498db', fontWeight: 600 }}>
-                    🎯 Vector Similarity Distance Map
-                  </span>
-                  <span style={{
-                    fontSize: '0.68rem', fontFamily: 'monospace', fontWeight: 700,
-                    color: copilotSimilarityScore > 0.65 ? '#ff6b6b' : copilotSimilarityScore > 0.35 ? '#f1c40f' : '#2ecc71'
-                  }}>
-                    {(copilotSimilarityScore * 100).toFixed(1)}%
-                  </span>
-                </div>
-                <div style={{ height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden', position: 'relative' }}>
-                  <div style={{
-                    height: '100%', borderRadius: '4px',
-                    width: `${Math.min(copilotSimilarityScore * 100, 100)}%`,
-                    background: copilotSimilarityScore > 0.65
-                      ? 'linear-gradient(90deg, #ff6b6b, #e74c3c)'
-                      : copilotSimilarityScore > 0.35
-                        ? 'linear-gradient(90deg, #f1c40f, #e67e22)'
-                        : 'linear-gradient(90deg, #2ecc71, #27ae60)',
-                    transition: 'width 0.6s ease, background 0.6s ease',
-                    boxShadow: `0 0 8px ${copilotSimilarityScore > 0.65 ? 'rgba(255,107,107,0.4)' : 'rgba(46,204,113,0.3)'}`
-                  }} />
-                  {/* Threshold marker at 65% */}
-                  <div style={{ position: 'absolute', left: '65%', top: 0, bottom: 0, width: '2px', background: 'rgba(255,107,107,0.5)' }} />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.3rem' }}>
-                  <span style={{ fontSize: '0.6rem', color: '#2ecc71' }}>Safe (0%)</span>
-                  <span style={{ fontSize: '0.6rem', color: '#ff6b6b' }}>⚠️ Block Threshold (65%)</span>
-                  <span style={{ fontSize: '0.6rem', color: '#e74c3c' }}>Adversarial (100%)</span>
-                </div>
-              </div>
-            )}
+                      alert(`Security Block: ${err.message || 'Adversarial jailbreak patterns detected.'}`);
+                    } else {
+                      alert(`Failed to send message: ${err.error || err.message}`);
+                    }
+                    const historyRes = await fetch(`${API_BASE}/policy/chat-history`, { headers: getHeaders() });
+                    if (historyRes.ok) {
+                      setChatMessages(await historyRes.json());
+                    }
+                  }
+                } catch (err: any) {
+                  console.error(err);
+                  alert('Network error sending chat message');
+                } finally {
+                  setChatLoading(false);
+                }
+              }}
+              className="chat-input-area"
+            >
+              <input 
+                type="text" 
+                className="chat-input-field"
+                placeholder={authRole === 'unauthenticated' ? 'Authenticate via OIDC Widget to chat...' : 'Ask Co-Pilot to write a policy...'}
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                disabled={authRole === 'unauthenticated' || chatLoading}
+              />
+              <button 
+                type="submit" 
+                className="chat-send-btn"
+                disabled={authRole === 'unauthenticated' || chatLoading || !chatInput.trim()}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"/>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+              </button>
+            </form>
           </div>
         </section>
 
         {/* Middle Column: Live + Draft Cedar Policy Simulator */}
-        <section className="glass-panel" style={{ marginTop: 0 }}>
+        <section id="policy-simulator" className="glass-panel" style={{ marginTop: 0 }}>
           <div className="card-header">
             <h2 className="card-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'hsl(var(--primary))', filter: 'drop-shadow(0 0 8px hsla(var(--primary), 0.4))' }}>
@@ -3918,7 +3971,7 @@ export default function App() {
           </form>
 
           {/* Simulated Seccomp System Call Auditing Terminal */}
-          <div style={{ marginTop: '1rem', padding: '0.8rem', background: 'rgba(0,0,0,0.4)', borderRadius: '8px', border: '1px solid rgba(255, 107, 107, 0.15)', fontFamily: 'monospace' }}>
+          <div id="syscall-monitor" style={{ marginTop: '1rem', padding: '0.8rem', background: 'rgba(0,0,0,0.4)', borderRadius: '8px', border: '1px solid rgba(255, 107, 107, 0.15)', fontFamily: 'monospace' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
               <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#ff6b6b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                 <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#ff6b6b', animation: 'pulse 1.5s ease-in-out infinite' }} />
@@ -3968,7 +4021,7 @@ export default function App() {
   return (
     <div className="app-container animate-fade-in">
       {/* Header */}
-      <header className="app-header">
+      <header className="app-header" id="brand-header">
         <div className="brand-section">
           <h1>
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'hsl(var(--primary))', filter: 'drop-shadow(0 0 8px hsla(var(--primary), 0.45))' }}>
@@ -3982,6 +4035,10 @@ export default function App() {
           <div className="status-indicator"></div>
           <span className="status-label">SECURITY ONLINE</span>
 
+          <button className="btn btn-secondary" onClick={() => { setTourStep(0); setTourActive(true); }} style={{ marginLeft: '0.8rem', padding: '0.35rem 0.85rem', fontSize: '0.78rem', borderColor: 'rgba(0, 255, 102, 0.4)', color: '#00ff66' }}>
+            🎓 Tour
+          </button>
+
           <button className="btn btn-secondary" onClick={handleResetDatabase} style={{ marginLeft: '0.8rem', padding: '0.35rem 0.85rem', fontSize: '0.78rem' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
@@ -3992,7 +4049,7 @@ export default function App() {
       </header>
 
       {/* OIDC Session Controller Drawer */}
-      <section className="glass-panel oidc-panel">
+      <section className="glass-panel oidc-panel" id="oidc-widget">
         <div className="oidc-header">
           <div className="oidc-icon">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -4114,6 +4171,38 @@ export default function App() {
         {activeTab === 'forensics' && renderForensicsTab()}
         {activeTab === 'sandbox' && renderSandboxTab()}
       </div>
+
+      {/* Guided Onboarding Tour Overlay Tooltips */}
+      {tourActive && (
+        <>
+          <div className="tour-backdrop" onClick={() => setTourActive(false)} />
+          <div 
+            className="tour-tooltip" 
+            style={getTourTooltipStyle(tourStep)}
+          >
+            <div className="tour-header">
+              <span className="tour-step-badge">Step {tourStep + 1} of {tourSteps.length}</span>
+              <button className="tour-close-btn" onClick={() => setTourActive(false)}>✕</button>
+            </div>
+            <h4 className="tour-title">{tourSteps[tourStep].title}</h4>
+            <p className="tour-body">{tourSteps[tourStep].body}</p>
+            <div className="tour-footer">
+              <button className="tour-skip-btn" onClick={() => setTourActive(false)}>Skip Tour</button>
+              <div className="tour-nav-btns">
+                {tourStep > 0 && (
+                  <button className="tour-btn tour-btn-prev" onClick={handleTourPrev}>Back</button>
+                )}
+                <button 
+                  className="tour-btn tour-btn-next" 
+                  onClick={handleTourNext}
+                >
+                  {tourStep === tourSteps.length - 1 ? 'Finish' : 'Next'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

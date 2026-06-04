@@ -546,7 +546,8 @@ fs.watch(process.cwd(), (eventType, filename) => {
 });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Global emergency Kill-Switch / Circuit Breaker Middleware
 app.use(async (req, res, next) => {
@@ -1801,6 +1802,35 @@ app.post('/api/consensus/approve', requireAuth(['developer', 'admin', 'auditor']
   }
 });
 
+// Conversational Policy Co-Pilot Chat History Storage
+export interface ChatMessage {
+  id: string;
+  sender: 'user' | 'assistant';
+  timestamp: string;
+  text: string;
+  cedarCode?: string;
+}
+
+let policyChatHistory: ChatMessage[] = [
+  {
+    id: 'msg_init',
+    sender: 'assistant',
+    timestamp: new Date().toISOString(),
+    text: 'Hello! I am your FidusGate Cedar Policy Co-Pilot. How can I help you construct or audit your security policies today?'
+  }
+];
+
+function resetChatHistory() {
+  policyChatHistory = [
+    {
+      id: 'msg_init',
+      sender: 'assistant',
+      timestamp: new Date().toISOString(),
+      text: 'Hello! I am your FidusGate Cedar Policy Co-Pilot. How can I help you construct or audit your security policies today?'
+    }
+  ];
+}
+
 // 7. POST /api/reset - Clear database to initial state (Role: admin)
 app.post('/api/reset', requireAuth(['admin']), async (req, res) => {
   try {
@@ -1808,6 +1838,7 @@ app.post('/api/reset', requireAuth(['admin']), async (req, res) => {
     ibpTracker.clearTasks(); // Clear IBP compliance states on database reset
     plmTracker.clearTasks(); // Clear PLM compliance states on database reset
     clearExecutionLatencies(); // Clear latency moving average history on database reset
+    resetChatHistory(); // Reset conversational chat history on database reset
     
     // Reset in-memory SecOps circuit breaker lockout state
     circuitBreakerTripped = false;
@@ -2316,6 +2347,136 @@ app.post('/api/policy/co-pilot', requireAuth(['developer', 'admin']), async (req
     }
   } catch (err: any) {
     res.status(500).json({ error: 'Co-Pilot execution exception occurred', message: err.message });
+  }
+});
+
+// GET /api/policy/chat-history - Retrieve co-pilot conversational chat history (Role: developer, admin, auditor)
+app.get('/api/policy/chat-history', requireAuth(['developer', 'admin', 'auditor']), (req, res) => {
+  res.json(policyChatHistory);
+});
+
+// POST /api/policy/chat - Send a message to conversational co-pilot chat (Role: developer, admin)
+app.post('/api/policy/chat', requireAuth(['developer', 'admin']), async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    if (!prompt) {
+      res.status(400).json({ error: 'Missing required parameter: prompt' });
+      return;
+    }
+
+    // Run AI Prompt Firewall check
+    const firewallResult = isPromptSecure(prompt);
+    if (!firewallResult.secure) {
+      log('warn', `🛡️ [PROMPT FIREWALL BLOCKED]: Intercepted malicious injection attempt inside chat prompt: "${prompt}"`);
+      res.status(400).json({
+        error: 'Prompt validation failed',
+        message: firewallResult.reason || 'Adversarial jailbreak patterns detected.'
+      });
+      return;
+    }
+
+    const userMessage: ChatMessage = {
+      id: `msg_u_${Date.now()}`,
+      sender: 'user',
+      timestamp: new Date().toISOString(),
+      text: prompt
+    };
+    policyChatHistory.push(userMessage);
+
+    let resultText = '';
+    let resultCedar = '';
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      log('warn', 'GEMINI_API_KEY is not configured for chat. Using rule-based mock chat responder.');
+      const mockPolicy = generateMockCedarPolicy(prompt);
+      const containsPolicyReq = prompt.toLowerCase().includes('permit') || prompt.toLowerCase().includes('allow') || prompt.toLowerCase().includes('forbid') || prompt.toLowerCase().includes('block') || prompt.toLowerCase().includes('policy') || prompt.toLowerCase().includes('sme');
+      
+      if (containsPolicyReq) {
+        resultText = `Based on your request, I've generated a Cedar policy for you. ${mockPolicy.explanation}`;
+        resultCedar = mockPolicy.cedarCode;
+      } else {
+        resultText = `Hello! I see you asked: "${prompt}". I'm standing by to help design Cedar authorization rules. Try asking: "allow pm-sme to write md files" or "permit security-sme to write policy files".`;
+      }
+    } else {
+      try {
+        const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-pro';
+        // Build context string from the last few messages
+        const contextString = policyChatHistory
+          .slice(-10)
+          .map(m => `${m.sender === 'user' ? 'User' : 'Assistant'}: ${m.text}`)
+          .join('\n');
+        
+        const chatSystemPrompt = `You are FidusGate's Cedar Policy Co-Pilot chat assistant. Assist the user with Cedar authorization rules, zero-trust architectures, and policy management. If the user asks you to write a policy, provide a concise explanation and include a structured JSON block representing your response. The final response from you should be formatted as a valid JSON object matching this schema:
+{
+  "text": "Your conversational response explanation",
+  "cedarCode": "permit(principal == ..., action == ..., resource) when { ... };" // optional, include only if proposing a policy rule
+}
+Ensure your output is strictly a valid JSON object with no markdown fences, comments, or extra text.`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=` + apiKey, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: chatSystemPrompt + '\n\nConversation history:\n' + contextString }]
+              }
+            ],
+            generationConfig: {
+              responseMimeType: "application/json"
+            }
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Gemini API returned status code ' + response.status);
+        }
+
+        const responseData = await response.json() as any;
+        const jsonText = responseData?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!jsonText) {
+          throw new Error('Empty response from Gemini API');
+        }
+
+        const parsed = JSON.parse(jsonText.trim());
+        resultText = parsed.text || '';
+        resultCedar = parsed.cedarCode || '';
+      } catch (apiErr: any) {
+        log('error', 'Failed to contact Gemini API for chat: ' + apiErr.message + '. Falling back to mock.');
+        const mockPolicy = generateMockCedarPolicy(prompt);
+        resultText = `Failed to contact Gemini API (${apiErr.message}). Falling back to mock. ${mockPolicy.explanation}`;
+        resultCedar = mockPolicy.cedarCode;
+      }
+    }
+
+    if (resultCedar) {
+      try {
+        const cedarWasmPath = path.join(process.cwd(), 'scripts', 'cedar.wasm');
+        const wasiResult = await runWasmCommand(cedarWasmPath, ['validate', '--schema', 'policy.cedarschema']);
+        if (wasiResult.exitCode !== 0) {
+          log('warn', `❌ CHAT STATIC VALIDATION FAILED: cedar.wasm verification rejected the generated policy.`);
+        } else {
+          log('info', `✅ CHAT STATIC VALIDATION PASSED: ${wasiResult.stdout.trim()}`);
+        }
+      } catch (err) {}
+    }
+
+    const assistantMessage: ChatMessage = {
+      id: `msg_a_${Date.now()}`,
+      sender: 'assistant',
+      timestamp: new Date().toISOString(),
+      text: resultText,
+      cedarCode: resultCedar || undefined
+    };
+    policyChatHistory.push(assistantMessage);
+
+    // Broadcast messages via WebSocket
+    broadcastWS('chat_message_created', { userMessage, assistantMessage });
+
+    res.json({ userMessage, assistantMessage });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Chat execution exception occurred', message: err.message });
   }
 });
 

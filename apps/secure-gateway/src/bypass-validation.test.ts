@@ -1,3 +1,4 @@
+// FidusGate Stateful Development Cycle Execution Marker
 import test from 'node:test';
 import assert from 'node:assert';
 import * as path from 'node:path';

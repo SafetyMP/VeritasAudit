@@ -1,16 +1,1 @@
-[
-  {
-    "id": "cmd_dangerous_test",
-    "createdAt": "2026-06-04T11:57:35.458Z",
-    "expiresAt": "2026-06-04T12:57:35.458Z",
-    "command": "rm -rf /var/log",
-    "initiator": "developer@fidusgate.internal",
-    "role": "developer",
-    "requiredVotes": 2,
-    "status": "pending",
-    "aiRating": "dangerous",
-    "aiReason": "AI Auditor critical threat detected",
-    "adminOverridden": true,
-    "approvals": []
-  }
-]
+[]
