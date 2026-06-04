@@ -868,9 +868,9 @@ test('FidusGate Cedar Policy & Command Auditor Integration Tests', async (t) => 
   });
 
   // ==========================================
-  // Phase 5: System Call Auditing, 15-Min Lockouts, Vector Firewall, MuSig2
+  // Phase 5: System Call Auditing, 15-Min Lockouts, Vector Firewall, Consensus
   // ==========================================
-  await t.test('Phase 5: eBPF System Call Auditor', async (subT) => {
+  await t.test('Phase 5: Simulated Seccomp System Call Auditor', async (subT) => {
     await subT.test('Should allow safe commands through kernel auditor', () => {
       const result = auditSandboxSyscalls('ls -la /workspace');
       assert.strictEqual(result.secure, true);
@@ -927,13 +927,13 @@ test('FidusGate Cedar Policy & Command Auditor Integration Tests', async (t) => 
     });
   });
 
-  await t.test('Phase 5: MuSig2 Consensus Threshold Verification', async (subT) => {
+  await t.test('Phase 5: Consensus Threshold Verification', async (subT) => {
     await subT.test('Dangerous commands should require 3 attestation keys', () => {
       const audit = auditConsensusRequest('rm -rf /var/log');
       assert.strictEqual(audit.rating, 'dangerous');
       // Per policy: dangerous commands require ALL 3 keys
       const requiredVotes = audit.rating === 'dangerous' ? 3 : 2;
-      assert.strictEqual(requiredVotes, 3, 'Dangerous commands must require 3 MuSig2 attestation keys');
+      assert.strictEqual(requiredVotes, 3, 'Dangerous commands must require 3 consensus attestation keys');
     });
 
     await subT.test('Safe commands should require 2 attestation keys', () => {

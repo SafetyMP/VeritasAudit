@@ -1,19 +1,73 @@
 # ⚖️ FidusGate
 
-### Open-Source, Evergreen Zero-Trust Governance & Runtime Verification Platform for AI Agents
+### Reference Implementation for Zero-Trust Governance & Runtime Verification for AI Agents
 
-FidusGate is an **open-source, evergreen project of capability** representing the state-of-the-art in zero-trust repository governance and runtime verification for **Autonomous AI-Agent Operations**. Unlike theoretical models or static mockups, FidusGate provides a fully realized, live operational blueprint that shifts security left—enforcing programmatic access controls, deterministic signature verification, and automated kernel-level auditing directly on active agentic workflows.
+FidusGate is an **open-source reference implementation and capability showcase** for zero-trust repository governance and runtime verification for **Autonomous AI-Agent Operations**. It shifts security left—enforcing programmatic access controls, signature verification (Ed25519), and simulated seccomp auditing directly on active agentic workflows.
 
-Designed with an extensible, **risk-centric architecture**, FidusGate establishes mathematically verifiable boundaries around AI tool execution, serving as a robust standard of capability in the industry for preventing unauthorized system modifications, privilege escalation, and prompt-injection-driven compromise.
+Designed with an extensible, **risk-centric architecture**, FidusGate establishes explicit, policy-enforced boundaries around AI tool execution, serving as a reference for securing agent execution to prevent unauthorized system modifications, privilege escalation, and prompt-injection-driven compromise.
+
+> [!IMPORTANT]
+> FidusGate is a reference implementation, not a production-hardened product.
 
 ---
 
+## 🛠️ Status, Maturity & Mocks
+
+FidusGate is designed as a capability showcase and educational reference. It combines real security mechanisms with simulated components for demonstration purposes:
+
+*   **Real Security Controls:**
+    *   **Cedar Access Policy Engine:** Active, file-level policy gating parsing permissions written in the [policy.cedar](file:///Users/sagehart/Documents/Antigravity%20Test%20Project/antigravity-custom-dev/policy.cedar) policy file.
+    *   **Cryptographic Receipts:** Signed transaction receipts verified on the client dashboard using real Ed25519 public-key cryptography.
+    *   **Filesystem Drift Detection:** Live tracking of untracked/modified files using Git plumbing commands, with rollback options.
+*   **Simulated Components & Mocks:**
+    *   **Database Persistence:** Defaults to a local flat-file JSON datastore for ease of local setup. Pluggable PostgreSQL integration via Prisma is provided but must be configured for real use.
+    *   **Syscall Audit Monitoring:** Models system call events based on command script strings rather than attaching actual eBPF kernel probes.
+    *   **Consensus Key Aggregation:** Simulates multi-signature key aggregation (MuSig2) via a multi-party attestation workflow stored in the database.
+    *   **Identity Provider:** Simulates OpenID Connect (OIDC) JWT token issuance via a federated dashboard widget.
+    *   **Integrations (SPIFFE/OIDC/KMS):** Stubbed placeholder fields in exported audit logs demonstrate planned integration designs rather than production hooks.
+
+---
+
+## 🛡️ Threat Model
+
+### In-Scope Security Objectives
+FidusGate aims to defend against:
+1.  **Prompt Injection Privilege Escalation:** An attacker injecting malicious instructions (e.g. `rm -rf /`) into an agent's context, causing the agent to execute unauthorized commands.
+2.  **Unauthorized Configuration Modifications:** Restricting the agent's ability to modify system policies (`policy.cedar`) or critical scripts (`scripts/*`) even if the agent is executing files in the repository.
+3.  **Supply Chain Attacks / Package Pollution:** Gateway-level blocking of commands that dynamically download or install arbitrary packages (e.g. `curl`, `npm install`) on the host system.
+4.  **Audit Trail Tampering:** Establishing a signed, tamper-evident append-only receipt log using Ed25519 public-key signatures, making retro-active history modification visible.
+
+### Out-of-Scope (What we are NOT defending against)
+1.  **Host-Level Kernel Compromise:** The sandbox environment relies on standard Docker container namespaces. It does not prevent low-level host exploits unless configured with an active gVisor runtime.
+2.  **Compromised Administrator Credentials:** Administrators have ultimate bypass authorities (e.g. policy updates or command override keys). FidusGate does not defend against compromised admin credentials.
+3.  **Adversarial Network Traffic:** FidusGate filters tool-call arguments at the application boundary; it is not a network-level firewall.
+
+---
+
+## 🚫 Known Limitations
+
+1.  **Syscall Auditing Simulation:** System call auditing parses command strings at the application gateway instead of hooking into active host-level kernel probes (such as eBPF or native `seccomp`).
+2.  **Single-Host Sandbox:** Sandbox isolation runs containerized on the local host machine, sharing the underlying OS kernel.
+3.  **Key Management:** Cryptographic key pairs for multi-role consensus are stored inside the database layer for demonstration purposes rather than being securely stored inside a Hardware Security Module (HSM) or cloud Key Management Service (KMS).
+
+---
+
+## 🔍 How to Review This
+
+To verify the governance model and containment controls:
+1.  **Cedar Policy Model:** Review the [policy.cedar](file:///Users/sagehart/Documents/Antigravity%20Test%20Project/antigravity-custom-dev/policy.cedar) file to evaluate the risk-tiered permission rules.
+2.  **Sandbox Boundaries:** Inspect [scripts/sandbox-execute.sh](file:///Users/sagehart/Documents/Antigravity%20Test%20Project/antigravity-custom-dev/scripts/sandbox-execute.sh) to evaluate how copy-on-write Docker runtime mounts isolate tool executions.
+3.  **Audit Log Verification:** Review the signature validation loop inside [packages/crypto-utils/src/index.ts](file:///Users/sagehart/Documents/Antigravity%20Test%20Project/antigravity-custom-dev/packages/crypto-utils/src/index.ts) to verify the tamper-evident receipt verification.
+
+---
+
+
 ## 🏛️ Regulatory & Risk Control Alignment
 
-FidusGate is modeled to align with international risk management and cybersecurity controls (e.g., **NIST SP 800-53, ISO/IEC 27001, SOC 2 Common Criteria**), translating corporate compliance structures into deterministic code policies:
+FidusGate is modeled to align with international risk management and cybersecurity controls (e.g., **NIST SP 800-53, ISO/IEC 27001, SOC 2 Common Criteria**), translating corporate compliance structures into policy rules:
 
 *   **Separation of Duties (SoD):** Programmatically separates code compilation, infrastructure modification, and security policy modifications. AI agents are locked out of modifying policy boundaries (`policy.cedar`) or core scripts (`scripts/*`) directly.
-*   **Auditability & Non-Repudiation:** Generates cryptographically signed **Ed25519 receipts** for all gateway transactions, establishing an immutable, verifiable ledger of agent actions.
+*   **Auditability & Non-Repudiation:** Generates cryptographically signed **Ed25519 receipts** for all gateway transactions, establishing a tamper-evident, append-only audit log of agent actions.
 *   **Access Control & Least Privilege:** Restricts tool invocation in real-time based on risk severity, forcing high-risk terminal commands into isolated Docker sandboxes.
 *   **System Integrity Protection:** Automatically audits agentic pipelines to scan for dynamic prompt injection vectors and insecure runtime variables.
 
@@ -57,7 +111,7 @@ graph TD
         direction LR
         Types["packages/core-types (Models)"]
         Crypto["packages/crypto-utils (Ed25519)"]
-        DB["packages/database (Mock Store)"]
+        DB["packages/database (JSON/Prisma)"]
         Action["packages/github-action (CI Gate)"]
     end
 
@@ -87,10 +141,10 @@ graph TD
 ### Component Details
 1.  **`packages/core-types`**: Declares strictly typed boundaries for transactions, security findings, logs, and verifiable receipts.
 2.  **`packages/crypto-utils`**: Encapsulates cryptographic signing and verification routines powered by modern **Ed25519** public-key cryptography.
-3.  **`packages/database`**: A mock thread-safe database backed by persistent, seeded JSON records for immediate offline display.
+3.  **`packages/database`**: A demonstration database module utilizing a seeded local JSON store for offline capability verification, with pluggable support for standard SQL databases (e.g. PostgreSQL via Prisma). Production deployments require a real database configuration.
 4.  **`packages/github-action`**: A custom GitHub Action guard that validates workflows, scans for prompt injections, and verifies commit receipts.
-5.  **`apps/secure-gateway`**: High-security Express microservice exposing transaction APIs with automatic PII (Personally Identifiable Information) masking and signature signing.
-6.  **`apps/admin-dashboard`**: A premium Vite-React operations control center styled with deep HSL space colors, glassmorphic card overlays, and Outfitted typography. Includes a standalone receipt signature verifier, live log streams, and interactive command consoles.
+5.  **`apps/secure-gateway`**: Express microservice exposing transaction APIs with automatic PII (Personally Identifiable Information) masking and signature signing, designed to interface with database persistence layers.
+6.  **`apps/admin-dashboard`**: A React operations dashboard with a receipt verifier, live logs, and command console.
 
 ---
 
@@ -102,7 +156,7 @@ FidusGate establishes a four-tier risk classification for tools available to aut
 | :--- | :--- | :--- | :--- |
 | **Tier 1 (Low)** | File reads, directory listing, regex searches | `permit` tool call globally | **Auto-Approved:** Read-only tasks run without blockages to prevent developer friction. |
 | **Tier 2 (Medium)** | Source directory file modifications (`apps/*`, `packages/*`) | `permit` for source directories | **Shadow-Enforced:** Permitted in source paths, but forbidden from editing configuration files (`policy.cedar`, `protect-mcp.config.json`). |
-| **Tier 3 (High)** | Terminal scripting, execution of compilation tasks | `permit` strictly within sandbox wrappers | **Interactive MFA:** Requires script-spawning to happen inside secure, isolated sandboxes (`sandbox-execute.sh`). Raw host access is blocked. |
+| **Tier 3 (High)** | Terminal scripting, execution of compilation tasks | `permit` strictly within sandbox wrappers | **Sandboxed Execution:** Requires script-spawning to happen inside secure, isolated sandboxes (`sandbox-execute.sh`). Raw host access is blocked. |
 | **Tier 4 (Critical)** | Global networking, arbitrary package installations (`npm i`, `curl`) | `forbid` globally | **Strict Interdiction:** Blocked at the gateway level to prevent supply chain attacks and untrusted package pollution. |
 
 ---
@@ -120,54 +174,54 @@ All workflows have been hardened by default:
 *   Transitioned triggers from `pull_request_target` to unprivileged `pull_request` triggers.
 *   Enforced read-only content scopes (`contents: read`).
 *   Stripped dynamically interpolated environment strings from AI prompts.
-*   Pristined agent runtime settings to use a strict `"sandbox": "workspace-read"` context with zero execution capabilities.
+*   Hardened agent runtime settings to use a strict `"sandbox": "workspace-read"` context with zero execution capabilities.
 
 ---
 
-## 💎 Premium Enterprise Feature Suites
+## ⚙️ Core Reference & Verification Features
 
-FidusGate includes a robust, high-performance suite of SecOps observability and simulation tools fully integrated into the Operations Dashboard:
+FidusGate includes a suite of security policy simulation and observability tools integrated into the developer and administration dashboard:
 
 ### 🧬 1. Live + Draft Cedar Policy Simulator
-* **Interactive dry-runs:** Toggles the simulator to `"Enable Custom Draft Policy Overlay (In-Memory Dry Run)"`. This mounts a high-performance in-memory text editor containing your active Cedar authorization code.
-* **Typographical diagnostics:** Write new rules or modify existing entries in real-time, instantly evaluating simulated agent actions (e.g. `sb:issuer:agent-80` calling `write_file`) against your draft policy.
-* **AST evaluation logs:** Returns dynamic permission statuses (`ALLOW` in neon green or `DENY` in glowing ruby) accompanied by the exact matching line rules from the AST engine.
-* **Production safety:** All custom draft changes are kept strictly in-memory, ensuring production policies remain isolated and untouched until formally approved.
+* **Interactive dry-runs:** Allows developers to toggle the simulator to `"Enable Custom Draft Policy Overlay (In-Memory Dry Run)"` and edit Cedar policies in an in-memory editor on the dashboard.
+* **Diagnostics:** Instantly evaluates simulated agent tool-calls (e.g. `sb:issuer:agent-80` calling `write_file`) against your active or draft policy.
+* **Evaluation logs:** Returns policy evaluation results (`ALLOW` or `DENY`) along with the specific matching rules evaluated by the Cedar engine.
+* **Scope isolation:** Draft changes are kept in-memory for testing, ensuring active local policies are not overwritten until explicitly committed.
 
 ### 💼 2. Forensic JSON Compliance Package Exporter
-* **Tamper-proof receipts:** The Forensic Command Timeline shows all audited commands executed inside our gVisor microVM shell.
-* **Unified package format:** Click **"Download Forensic Compliance Receipt"** on any timeline entry to compile sandboxed logs, SPIFFE workloads, OIDC attestation claims, and cryptographic signatures into a structured JSON envelope.
-* **Role-based security:** Gated so only authenticated roles of `admin` or `auditor` can pull forensic details, preventing credential harvesting.
+* **Tamper-evident logs:** The Forensic Command Timeline tracks audited commands executed inside the sandboxed execution environment.
+* **Unified package format:** Allows exporting a signed compliance receipt compiling sandbox logs, simulated SPIFFE identifiers, OIDC attestation claims, and Ed25519 signatures into a structured JSON envelope.
+* **Access controls:** Access to forensic compliance reports is restricted to `admin` or `auditor` roles to prevent credential harvesting.
 
 ### 🤖 3. AI-Agent Auto-Remediation Suggestions
-* **Corrective guidance:** When the Command Auditor intercepts a blocked/forbidden command (e.g. a developer trying to run `curl http://...`), it dynamically returns a tailored remediation suggestion (e.g. *Suggesting safe mirrors or local cache stores*).
-* **Self-Refactoring SDLC:** These corrective suggestion hooks are packed inside `/api/sandbox/execute` responses, allowing automated coding tools to self-correct and learn security requirements autonomously.
+* **Corrective guidance:** When the Command Auditor intercepts a blocked command (e.g. an agent trying to run `curl http://...`), the gateway returns a remediation recommendation (e.g. *suggesting configured mirrors or cached local files*).
+* **Self-Correction loop:** Remediations are packaged in `/api/sandbox/execute` responses, allowing autonomous agent workflows to parse and self-correct tool execution errors.
 
-### 📐 4. Polished Collapsible Server Architecture Guide
-* **Native Flow Integration:** Designed in response to user feedback, the interactive guide is integrated as a dedicated, space-obsidian glassmorphic accordion section positioned naturally right before the terminal console.
-* **Smooth Micro-Animations:** A clickable header toggle slides the guide body open or closed with smooth CSS slide-down animations and updates a reactive chevron indicator.
-* **Component Profiling:** SecOps administrators can interactively select component cards (Secure Gateway, Operations Console, Rust Cedar Daemon, Cryptographic Utilities, Database Clients, Core Types, and Sandbox execution layers) to instantly view their **Purpose & Security Value**, **Operational Runbook instructions (ports, triggers, scripts)**, and **Key Capabilities & Functions**.
+### 📐 4. Collapsible Server Architecture Guide
+* **Dashboard Integration:** An interactive guide integrated as a collapsible accordion section right before the terminal console.
+* **Interactions:** A header toggle expands or collapses the guide body and updates a status chevron.
+* **Component Profiling:** Displays component details (Secure Gateway, Operations Console, Cryptographic Utilities, Database Clients, Core Types, and Sandbox execution layers), defining their purpose, runbook parameters, and key functions.
 
-### 📡 5. Phase 3 Active Filesystem Drift Auto-Reconciliation
-* **Real-Time Drift Detection:** The Secure Gateway utilizes `scripts/sandbox-drift-detect.sh` to track untracked, modified, or deleted files inside the workspace relative to git index status (excluding environment, node_modules, and cache files).
-* **Stateful Logging & WebSockets:** Logs all drift files, change types (`added`, `modified`, `deleted`), and raw diffs into the database, instantly broadcasting them via WebSockets (`filesystem_drift_detected`) to update the Operations Console UI with warning status overlays.
-* **One-Click Reconcile Rollbacks:** Security administrators can trigger `POST /api/sandbox/reconcile` directly from the dashboard, executing a clean and restore sequence (`git restore . && git clean -fd`) inside the workspace to instantly revert the environment to a clean git status, reconcile database records, and update WebSocket clients.
+### 📡 5. Filesystem Drift Detection & Auto-Reconciliation
+* **Drift Tracking:** The Secure Gateway utilizes `scripts/sandbox-drift-detect.sh` to track untracked, modified, or deleted files inside the workspace relative to git index status (excluding environment, node_modules, and cache files).
+* **Stateful Logging & WebSockets:** Logs all drift files, change types (`added`, `modified`, `deleted`), and raw diffs to the datastore, broadcasting updates via WebSockets (`filesystem_drift_detected`) to update the Operations Console UI.
+* **One-Click Reconcile Rollbacks:** Allows administrators to trigger `POST /api/sandbox/reconcile` from the dashboard, executing a restore sequence (`git restore . && git clean -fd`) inside the workspace to revert the environment to a clean git status, update database records, and refresh UI clients.
 
-### 🧠 6. Phase 3 Gemini-Powered Cedar Co-Pilot
-* **Natural Language to Policy Translation:** Provides conversational policy generation inside the `/api/policy/co-pilot` endpoint. SecOps developers submit conversational prompts (e.g. *"allow pm-sme to write .md files"*).
-* **Gemini-1.5-Pro API Integration:** Leverages the official Google Gemini API (with `gemini-1.5-pro` model) to interpret user intent, generating a syntactically correct Cedar authorization rule and a concise plain-English explanation returned as JSON.
-* **Resilient Mock Fallback Engine:** Implements a robust rule-based mock parser that handles key policies (for roles like `pm-sme` and `security-sme`) when `GEMINI_API_KEY` is not set, providing robust fail-safes during offline development.
+### 🧠 6. Gemini-Powered Cedar Co-Pilot
+* **Natural Language to Policy Translation:** Provides conversational policy generation inside the `/api/policy/co-pilot` endpoint. Developers can submit conversational prompts (e.g. *"allow pm-sme to write .md files"*).
+* **Gemini-1.5-Pro API Integration:** Leverages the official Google Gemini API (with `gemini-1.5-pro` model) to translate user intent into syntactically valid Cedar authorization rules and a plain-text description.
+* **Rule-Based Mock Fallback Engine:** Implements a rule-based mock parser that handles key policies (for roles like `pm-sme` and `security-sme`) when `GEMINI_API_KEY` is not set, providing robust fail-safes during offline development.
 
-### 🔑 7. Multi-Role MuSig2 Attestation & Execution Bypass (Phase 4)
-* **Cryptographic Attestation Gating:** Suspending raw terminal execution of high-risk shell commands until approved by consensus. Attestations are securely signed using multi-role consensus keys (Admin, Developer, Auditor).
-* **Initiator Self-Attestation Block:** Programmatically prevents the proposer of a command from signing off on their own action (satisfying strict Zero-Trust compliance standards and Separation of Duties).
-* **Consensus Bypass Execution:** Added a bypass interceptor in `/api/sandbox/execute` that verifies approved cryptographic actions in the database. When the identical command is run in the Sandbox Console, FidusGate automatically bypasses standard allowlist blocks, runs the task in the microVM container, and marks the action status as `completed`.
-* **Auditor Role & OIDC Widget Support:** Enhanced the federated authentication widget with specialized OIDC identity routers, aligning default emails based on the selected role button to eliminate authentication failures while maintaining custom SRE address typing.
+### 🔑 7. Multi-Role Consensus Attestation & Execution Bypass (Phase 4)
+* **Attestation Gating:** Suspends terminal execution of high-risk shell commands until approved by consensus. Attestations are simulated using multi-role keys (Admin, Developer, Auditor) stored in the database.
+* **Initiator Self-Attestation Block:** Programmatically prevents the proposer of a command from signing off on their own action (satisfying Separation of Duties).
+* **Consensus Bypass Execution:** Bypasses standard allowlist blocks inside `/api/sandbox/execute` once the approved cryptographic consensus is met. Running the command in the Sandbox Console executes the task in the isolated container and marks the action status as `completed`.
+* **Auditor Role & OIDC Widget Support:** Extends the federated authentication widget with specialized OIDC mock identity routing, aligning default emails based on the selected role button to simplify local review.
 
-### 📡 8. Live eBPF-Inspired Kernel System Call Monitor (Phase 5)
-* **Real-time Seccomp Auditing:** Direct integration of low-level kernel auditing on the Secure Gateway. Parses command blocks to trace expected system call flows (`sys_execve`, `sys_openat`, `sys_read`, `sys_unlinkat`, `sys_fchmodat`).
-* **Seccomp Violation Lockouts:** Triggers a strict 15-minute system execution lockout whenever critical system calls are detected (`sys_ptrace` for jail injections, `sys_setns`/`sys_unshare` for namespace escapes, or unauthorized outbound socket calls).
-* **Dynamic Frontend React Integration:** Wired the audited `syscalls` array returned by sandbox execution REST calls into a dynamic React state hook. The eBPF monitor panel renders live ALLOWED and BLOCKED seccomp logs with visual indicators and violation reasons in real-time.
+### 📡 8. Simulated Seccomp Auditing & Syscall Flow Modeling (Phase 5)
+* **Simulated Seccomp Auditing:** Models and traces expected system call flows (`sys_execve`, `sys_openat`, `sys_read`, `sys_unlinkat`, `sys_fchmodat`) on the Secure Gateway based on parsed command strings.
+* **Violation Lockouts:** Triggers a simulated 15-minute execution lockout whenever critical system calls are modeled (e.g. `sys_ptrace` for debugging probes, `sys_setns`/`sys_unshare` for namespace modifications, or unauthorized outbound socket calls).
+* **Frontend React Integration:** Wires the modeled `syscalls` array returned by sandbox execution REST calls into a dynamic React state hook. The syscall monitor panel renders simulated ALLOWED and BLOCKED logs with visual indicators and violation reasons.
 
 ### ⚡ 9. Adaptive Auto-Throttling & macOS Sandbox Compatibility (Phase 5)
 * **Intelligent Auto-Throttling:** Implemented a moving-average latency tracker that triggers defensive rate-limiting (HTTP 429) when average sandbox execution times spike. Configured with a `2000ms` window to prevent standard Docker container startup overheads from causing throttle locks.
@@ -175,7 +229,6 @@ FidusGate includes a robust, high-performance suite of SecOps observability and 
 * **Unified State Reset:** Configured the database `/api/reset` handler to atomically clear the moving latency average alongside compliance states, instantly unlocking active throttling parameters.
 
 ---
-
 
 ## ⚙️ Quick Start & Execution Guide
 
@@ -276,13 +329,13 @@ The `protect-mcp.config.json` governs the gateway runtime enforcement behavior v
 
 ---
 
-## 🌿 An Evergreen Open-Source Standard
+## 🌿 An Evergreen Reference Implementation
 
-FidusGate is designed not merely as a fixed utility, but as an **evergreen, evolving standard of capability** for AI system security. As the AI and autonomous agent landscape transitions through rapid advancements, FidusGate’s architecture remains continuously aligned, serving as a functional reference for both security teams and platform engineers:
+FidusGate is designed as an evergreen, evolving reference implementation of runtime governance for AI agent security:
 
-*   **Continuous Evolutionary Delivery:** Fully governed by conventional commits and automated pipelines, ensuring that the latest security signatures, Cedar rules, and seccomp mappings compile, version, and tag autonomously.
-*   **A Standard of Real-World Capability:** By shipping direct integrations—including live sandbox microVM command runners, dynamic AST policy simulations, cryptographic transaction hash chaining, and real-time eBPF-inspired system call logs—FidusGate establishes a living, functional benchmark. It moves the industry past theoretical policy PDFs into **mathematically and operationally verified runtime enforcement**.
-*   **Open-Source and Extensible Core:** The modular npm workspace monorepo is engineered for seamless community-driven expansion. Security architects can easily write new custom playbooks under the `skills/` tree, deploy specialized authentication mechanisms via our federated OIDC provider hooks, or plug in advanced LLM-based firewalls to evaluate adversarial prompt cosine similarities.
+*   **Continuous Evolutionary Delivery:** Fully governed by conventional commits and automated pipelines, ensuring that the latest security signatures, Cedar rules, and policy maps compile, version, and tag autonomously.
+*   **Real-World Reference Capabilities:** By shipping concrete templates—including sandboxed command execution, dynamic AST policy simulations, tamper-evident cryptographic logs, and simulated system call modeling—FidusGate establishes a living, functional benchmark. It moves the industry past theoretical policy PDFs into **explicitly policy-enforced and operationally auditable runtime enforcement**.
+*   **Open-Source and Extensible Core:** The modular npm workspace monorepo is engineered for community expansion. Security architects can write new custom playbooks under the `skills/` tree, deploy specialized authentication mechanisms via our federated provider hooks, or plug in advanced LLM-based firewalls to evaluate adversarial prompt parameters.
 
 ---
 

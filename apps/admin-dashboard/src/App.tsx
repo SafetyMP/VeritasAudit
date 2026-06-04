@@ -2372,7 +2372,7 @@ export default function App() {
                   </div>
                 )}
 
-                {/* MuSig2 Threshold Cryptography Attestation Graph */}
+                {/* Consensus Threshold Cryptography Attestation Graph */}
                 {(() => {
                   const activeReq = consensusRequests[0];
                   const adminSigned = activeReq ? activeReq.approvals.some((a: any) => a.role === 'admin') : false;
@@ -2381,7 +2381,7 @@ export default function App() {
                   return (
                     <div style={{ marginTop: '1.2rem', padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '10px', border: '1px solid rgba(0, 255, 102, 0.1)' }}>
                       <h5 style={{ margin: '0 0 0.8rem 0', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'hsl(var(--text-secondary))', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        🔐 MuSig2 Threshold Key Aggregation Graph
+                        🔐 Consensus Threshold Key Aggregation Graph
                       </h5>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', position: 'relative', minHeight: '120px' }}>
                         {/* Key Nodes */}
@@ -2423,7 +2423,7 @@ export default function App() {
                               σ_agg = Σ(K₁ · K₂ · K₃)
                             </div>
                             <div style={{ fontSize: '0.64rem', color: 'hsl(var(--text-muted))' }}>
-                              MuSig2 Schnorr Aggregated Threshold Signature
+                              Consensus Schnorr Aggregated Threshold Signature
                             </div>
                           </div>
                         </div>
@@ -3917,14 +3917,14 @@ export default function App() {
             />
           </form>
 
-          {/* eBPF Kernel System Call Auditing Terminal */}
+          {/* Simulated Seccomp System Call Auditing Terminal */}
           <div style={{ marginTop: '1rem', padding: '0.8rem', background: 'rgba(0,0,0,0.4)', borderRadius: '8px', border: '1px solid rgba(255, 107, 107, 0.15)', fontFamily: 'monospace' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
               <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#ff6b6b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                 <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#ff6b6b', animation: 'pulse 1.5s ease-in-out infinite' }} />
-                eBPF Kernel Syscall Monitor
+                Simulated Seccomp Syscall Monitor
               </span>
-              <span style={{ fontSize: '0.62rem', color: 'hsl(var(--text-muted))' }}>seccomp-bpf v3.2</span>
+              <span style={{ fontSize: '0.62rem', color: 'hsl(var(--text-muted))' }}>simulated syscall-flow v1.0</span>
             </div>
             <div style={{ fontSize: '0.7rem', lineHeight: 1.7, color: '#aaa' }}>
               {syscalls.length === 0 ? (
@@ -3933,7 +3933,7 @@ export default function App() {
                   <div style={{ color: '#00ff66' }}>[sys_openat] <span style={{ color: '#666' }}>0x3b1c</span> → /etc/ld.so.cache O_RDONLY <span style={{ color: '#2ecc71', fontSize: '0.62rem' }}>ALLOWED</span></div>
                   <div style={{ color: '#00ff66' }}>[sys_read]   <span style={{ color: '#666' }}>0x5e4f</span> → fd=3 buffer count=4096 <span style={{ color: '#2ecc71', fontSize: '0.62rem' }}>ALLOWED</span></div>
                   <div style={{ fontSize: '0.65rem', color: 'hsl(var(--text-muted))', marginTop: '0.4rem', fontStyle: 'italic' }}>
-                    📡 Standing by. Run a command or playbook to audit live kernel-level system calls...
+                    📡 Standing by. Run a command or playbook to audit simulated system call flows...
                   </div>
                 </>
               ) : (

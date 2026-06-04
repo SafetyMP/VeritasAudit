@@ -1,12 +1,12 @@
-# ⚖️ Walkthrough: FidusGate Enterprise Upgrades & Security Hardening
+# ⚖️ Walkthrough: FidusGate Upgrades & Security Hardening
 
-This walkthrough details the successful implementation and mathematical verification of FidusGate's four enterprise-grade security, operations, and AI developer experience enhancements.
+This walkthrough details the successful implementation and auditing of FidusGate's four security, operations, and AI developer experience enhancements.
 
 ---
 
 ## 🏛️ Executive Summary
 
-FidusGate has been successfully matured from a local agent sandbox into an enterprise-ready, high-performance, and cryptographically tamper-proof **AI DevSecOps Governance Platform**. 
+FidusGate has been successfully matured from a local agent sandbox into a high-performance, and cryptographically tamper-evident **AI DevSecOps Governance Reference Implementation**. 
 
 All integrated systems operate in **100% backward-compatible configurations**, seamlessly running in both production PostgreSQL environments and lightweight zero-dependency flat-file JSON mock database fallbacks.
 
@@ -36,7 +36,7 @@ graph TD
 
 ## 🔑 1. Cryptographic Receipt Hash-Chaining (`packages/crypto-utils`)
 
-To establish mathematically absolute non-repudiation and prevent historical audit tampering, we successfully integrated a receipt ledger digest chain:
+To establish tamper-evident non-repudiation and prevent historical audit tampering, we successfully integrated a receipt ledger digest chain:
 
 - **Mathematical Digests:** Added `hashReceipt` helper to `@fidusgate/crypto-utils` executing `SHA-256` digests over raw receipt structures.
 - **KMS Wrappers:** Built modular Transit Key routing supporting hardware security module (HSM) signing wrappers for AWS KMS (`Sign` endpoint) and GCP KMS (`AsymmetricSign` endpoint), automatically falling back to secure local keypairs in developmental modes.
@@ -67,12 +67,12 @@ The core Node.js gateway was instrumented with active security middleware, JSON 
 
 ## 🎨 4. Operations Dashboard Upgrades (`apps/admin-dashboard`)
 
-FidusGate's premium obsidian-dark glassmorphism dashboard has been fully enriched with two high-fidelity interactive sections:
+FidusGate's developer dashboard has been enriched with interactive sections:
 
 ### 🚨 Emergency global circuit breaker (Kill-Switch)
 Placed inside Card 1 (Cryptographic SME Role Keys & Attestation Graph) under the **Compliance Panel**. When activated by an authorized admin:
 - Instantly toggles FidusGate into a fully restrictive "Suspended" mode.
-- Triggers high-fidelity glowing neon-red pulsing animations and visual warnings.
+- Triggers visual warnings and alerts on the UI.
 - Logs alert status messages directly into the Unified Security Shell.
 
 ### 🤖 Gemini Cedar Co-Pilot Playground
@@ -85,15 +85,15 @@ Added as a widescreen sidebar console inside the **Cedar Policy Tab**:
 ### 📊 OpenTelemetry Telemetry Cards
 Added a dedicated OTel Latency & Rate Tracing card displaying micro-sparkline metrics that reflect real-time active or flatlined statistics based on circuit breaker states.
 
-### 🔑 4.5. Multi-Role MuSig2 Attestation & Execution Bypass (Phase 4)
+### 🔑 4.5. Multi-Role Consensus Attestation & Execution Bypass (Phase 4)
 * **Cryptographic Attestation & Proposer Block:** Implemented strict Zero-Trust consensus controls preventing the proposer of a command from self-attesting. The "Attest & Sign" button displays an **"Initiator Blocked"** badge if the logged-in user email matches the action's proposer.
-* **Approved Command Terminal Bypass:** Added a bypass routing mechanism in `/api/sandbox/execute` that verifies approved cryptographic actions in the database. Running the exact pre-approved command in the Sandbox Console skips the standard allowlist block, executes inside the MicroVM container, and flags the action as completed.
+* **Approved Command Terminal Bypass:** Added a bypass routing mechanism in `/api/sandbox/execute` that verifies approved cryptographic actions in the database. Running the exact pre-approved command in the Sandbox Console skips the standard allowlist block, executes inside the isolated sandbox container, and flags the action as completed.
 * **Auditor Role & OIDC Widget Support:** Upgraded the federated OIDC authentication portal to dynamically align default identity emails (e.g. `auditor@fidusgate.internal`) based on role buttons, preventing authentication transaction rejections.
 
-### 📡 4.6. eBPF System Call Monitor & Adaptive Auto-Throttling (Phase 5)
-* **Live System Call Auditing:** Wired an eBPF-inspired system call analyzer inside the Sandbox engine, tracing low-level calls (`sys_execve`, `sys_openat`, `sys_read`, `sys_unlinkat`, `sys_fchmodat`).
-* **Dynamic seccomp Logs:** Linked the frontend console with the live audited `syscalls` array using React state hooks. The eBPF panel maps over these live system call events, showing real-time `ALLOWED`/`BLOCKED` seccomp logs and violation lockouts.
-* **macOS Sandbox & Auto-Throttling Compatibility:** Added macOS compatibility wrappers for `timeout` execution inside the microVM, and raised the Auto-Throttle moving average threshold to `2000ms` to prevent standard Docker container startup latencies from triggering throttle blocks.
+### 📡 4.6. Simulated Seccomp Auditing and Syscall Flow Modeling (Phase 5)
+* **Live System Call Auditing:** Wired a simulated system call flow model inside the Sandbox engine, tracing expected calls (`sys_execve`, `sys_openat`, `sys_read`, `sys_unlinkat`, `sys_fchmodat`).
+* **Dynamic seccomp Logs:** Linked the frontend console with the live audited `syscalls` array using React state hooks. The syscall monitor panel maps over these simulated system call events, showing `ALLOWED`/`BLOCKED` seccomp logs and violation lockouts.
+* **macOS Sandbox & Auto-Throttling Compatibility:** Added macOS compatibility wrappers for `timeout` execution inside the isolated sandbox container, and raised the Auto-Throttle moving average threshold to `2000ms` to prevent standard Docker container startup latencies from triggering throttle blocks.
 
 ---
 
@@ -147,23 +147,23 @@ npm run test
     ✔ Consensus Auditor - Command classification rules (0.48ms)
     ✔ Consensus Gating - Admin Override of Dangerous Action (2.39ms)
   ✔ Phase 4: Advanced AI Governance & Self-Healing Integration (3.75ms)
-  ▶ Phase 5: eBPF System Call Auditor
+  ▶ Phase 5: Simulated Seccomp System Call Auditor
     ✔ Should allow safe commands through kernel auditor (0.31ms)
     ✔ Should block sys_ptrace jailbreak attempts (0.11ms)
     ✔ Should block outbound socket connections (curl, wget, ssh) (0.31ms)
     ✔ Should block namespace escape attempts (setns, unshare) (0.09ms)
-  ✔ Phase 5: eBPF System Call Auditor (1.05ms)
+  ✔ Phase 5: Simulated Seccomp System Call Auditor (1.05ms)
   ▶ Phase 5: Cosine Vector Similarity Firewall
     ✔ Should pass normal non-adversarial prompts (0.24ms)
     ✔ Should block prompts with high adversarial cosine similarity (0.11ms)
     ✔ Should return similarity scores for all prompts (0.07ms)
   ✔ Phase 5: Cosine Vector Similarity Firewall (0.54ms)
-  ▶ Phase 5: MuSig2 Consensus Threshold Verification
+  ▶ Phase 5: Consensus Threshold Verification
     ✔ Dangerous commands should require 3 attestation keys (0.06ms)
     ✔ Safe commands should require 2 attestation keys (0.10ms)
     ✔ Suspicious commands should require 2 attestation keys (0.05ms)
     ✔ 15-minute lockout constant should be correct (0.04ms)
-  ✔ Phase 5: MuSig2 Consensus Threshold Verification (0.39ms)
+  ✔ Phase 5: Consensus Threshold Verification (0.39ms)
 ✔ FidusGate Cedar Policy & Command Auditor Integration Tests (31.32ms)
 ℹ tests 40 | pass 40 | fail 0
 ```

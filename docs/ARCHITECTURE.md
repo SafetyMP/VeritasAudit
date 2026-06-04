@@ -1,6 +1,6 @@
 # ⚖️ FidusGate Architecture & Component Manual
 
-FidusGate is an enterprise-grade, zero-trust repository governance and runtime verification platform specifically engineered for **Autonomous AI-Agent Operations**. It shifts security left, enforcing real-time programmatic access controls, deterministic signature verification, and automated static security analysis on agentic workflows.
+FidusGate is a zero-trust repository governance and runtime verification reference implementation specifically engineered for **Autonomous AI-Agent Operations**. It shifts security left, enforcing real-time programmatic access controls, signature verification (Ed25519), and automated static security analysis on agentic workflows.
 
 This document serves as the comprehensive engineering guide detailing what each component is, how it runs, its security value, and its architectural function in the FidusGate monorepo.
 
@@ -52,7 +52,7 @@ graph TD
 | **Core Database Client** | `packages/database` | `@fidusgate/database` | Thread-safe transaction persistence layer supporting JSON local files and PostgreSQL database configurations. |
 | **Unified Core Types** | `packages/core-types` | `@fidusgate/core-types` | Strictly typed interfaces for logs, receipts, compliance findings, and transaction payloads. |
 | **Custom GitHub Action Guard** | `packages/github-action` | `@fidusgate/github-action` | Custom Github Action verifying workflows for prompt injections and verifying cryptographic audit receipts. |
-| **Isolated Execution Sandbox** | `scripts/*` & `scripts/sandbox` | *N/A* | Shell-based runtime controllers providing copy-on-write Docker microVM mounts and gVisor isolation gates. |
+| **Isolated Execution Sandbox** | `scripts/*` & `scripts/sandbox` | *N/A* | Shell-based runtime controllers providing copy-on-write Docker container mounts and optional gVisor sandbox configurations. |
 
 ---
 
@@ -80,11 +80,11 @@ The **Secure Gateway Backend** is the high-security core of FidusGate. It acts a
 ### 🎨 2. Operations Dashboard (`apps/admin-dashboard`)
 
 #### 🔹 Value & Function
-The **Operations Dashboard** is a premium, space-obsidian glassmorphic administrative interface. It provides visual observability over the autonomous agent operations, giving security staff real-time insights and dry-run playgrounds.
-* **Cryptographic Attestation Grid:** Displays real-time federated OIDC Oauth signatures, SPIFFE workload IDs, and active token budget states.
+The **Operations Dashboard** is a developer and administrator interface. It provides visual observability over the autonomous agent operations, giving security staff real-time insights and dry-run playgrounds.
+* **Cryptographic Attestation Grid:** Displays real-time federated OIDC OAuth signatures, SPIFFE workload IDs, and active token budget states.
 * **Forensic Auditing Timeline:** Lists all commands executed in sandboxes, displaying raw arguments, exit codes, and providing audit-ready JSON receipt downloads.
 * **Interactive Policy Simulator:** Toggles a dry-run canvas allowing administrators to draft custom Cedar policies and instantly evaluate mock inputs without overwriting production rules.
-* **Ledger Verifier:** Incorporates a client-side public-key cryptosystem verifying Ed25519 signature receipts, guaranteeing non-repudiation.
+* **Ledger Verifier:** Incorporates a client-side public-key verification helper confirming Ed25519 signature receipts, guaranteeing non-repudiation.
 
 #### 🔹 Operational Runbook
 * **Development Mode:** Runs on Vite at port `3000`. Starts via `npm run dev` and communicates with the Secure Gateway via Vite's proxy configurations.
@@ -95,7 +95,7 @@ The **Operations Dashboard** is a premium, space-obsidian glassmorphic administr
 ### 🦀 3. Rust Cedar Policy Daemon (`packages/cedar-daemon`)
 
 #### 🔹 Value & Function
-The **Rust Cedar Policy Daemon** provides the high-performance authorization backbone of the platform. Written in Rust, it interfaces directly with the official Google-backed `cedar-policy` crate, guaranteeing strict conformance to Cedar specifications.
+The **Rust Cedar Policy Daemon** provides the high-performance authorization backbone of the platform. Written in Rust, it interfaces directly with the official AWS-backed `cedar-policy` crate, guaranteeing strict conformance to Cedar specifications.
 * **Schema-Guided Validation:** Enforces strict types on entity contexts using `policy.cedarschema`. This prevents typological mismatch attacks, ensuring that arbitrary properties injected into evaluations do not bypass authorization boundaries.
 * **In-Memory Decisioning:** Resolves complex authorization trees in microseconds, preventing pipeline lag for high-throughput AI agents.
 
@@ -156,7 +156,7 @@ The **Unified Core Types** package defines the strictly typed structural boundar
 
 #### 🔹 Value & Function
 The **Execution Sandbox** manages runtime virtualization, guaranteeing that high-risk terminal commands executed by autonomous agents cannot contaminate the host environment.
-* **gVisor microVM Hardening (`setup-gvisor.sh`):** Configures Docker runtimes to use the `runsc` secure container sandboxing engine on Linux.
+* **gVisor Sandbox Hardening (`setup-gvisor.sh`):** Configures Docker runtimes to use the `runsc` secure container sandboxing engine on Linux.
 * **Ephemeral Overlay Mounts (`sandbox-execute.sh`):** Mounts the primary codebase as read-only (`ro`) and overlays a copy-on-write memory volume inside the execution container, discarding temporary modifications after calculating the final patch file.
 * **Local CI/CD Emulation (`ci-verify.sh`):** Leverages `act` to boot unprivileged workflows, verifying security gates entirely offline inside local Docker networks.
 
@@ -189,9 +189,9 @@ The **Custom GitHub Action Guard** extends FidusGate's runtime governance polici
 
 ---
 
-## 💎 Premium Feature Architectures & Observability Flows
+## ⚙️ Core Feature Architectures & Observability Flows
 
-FidusGate implements seven core premium modules designed for advanced enterprise governance:
+FidusGate implements several reference modules designed for governance and auditing:
 
 ### 1. Live + Draft Cedar Policy Simulator
 * **Architecture:** Exposes a secure endpoint `/api/policy/simulate`. When active, it parses the input JSON structure `{ principal, action, context }`.
@@ -202,12 +202,12 @@ FidusGate implements seven core premium modules designed for advanced enterprise
 * **Packaging Strategy:** Resolves log histories, matches them to OIDC OAuth attestation scopes (`GET /api/auth/attested-claims`), compiles Ed25519 signature strings, and bundles the resulting telemetry into a structured JSON envelope download. Gated exclusively to `admin` and `auditor` roles.
 
 ### 3. AI-Agent Auto-Remediation Suggestions
-* **System Design:** Command-line inputs are parsed via `command-auditor.ts` using advanced tokenizer regular expressions.
+* **System Design:** Command-line inputs are parsed via `command-auditor.ts` using tokenizer regular expressions.
 * **Correction Loops:** If blocked execution patterns are detected, the gateway returns a custom recommendation structure within the JSON payload. Autonomous coding agents scan this field to self-correct command invocations.
 
 ### 4. Interactive Collapsible Portals Guide
-* **UX Redesign:** Positioned as an inline collapsible accordion panel in `App.tsx` directly above the terminal shell window.
-* **Animations & Styles:** Uses custom `@keyframes archSlideDown` and transition rules in `App.css` to open/close dynamically under a single React state trigger (`showArchPanel`), providing instant visibility of system runbooks to SecOps auditors.
+* **UX Integration:** Positioned as an inline collapsible accordion panel in `App.tsx` directly above the terminal shell window.
+* **Animations & Styles:** Uses transition rules in `App.css` to open/close dynamically under a single React state trigger (`showArchPanel`), providing visibility of system runbooks to SecOps auditors.
 
 ### 5. Active Filesystem Drift Auto-Reconciliation (Phase 3)
 * **Real-time Porcelain Scans:** Spawns `scripts/sandbox-drift-detect.sh` inside the active workspace path on transaction events. It captures porcelain status lines (e.g. `M`, `??`, `D`), filtering configuration and environment directories.

@@ -124,7 +124,15 @@ timeout "$TIMEOUT_LIMIT" docker run --name "$CONTAINER_NAME" \
       done && \
     cd /app && \
     echo '🚀 Executing command in sandboxed environment...' && \
-    $COMMAND
+    $COMMAND; \
+    EXIT_VAL=\$?; \
+    if [ \$EXIT_VAL -eq 0 ]; then \
+      echo '🔍 Generating git diff patch...' && \
+      diff -ruN --exclude=node_modules --exclude=.git --exclude=.turbo /workspace /app | \
+      sed 's|^\(--- \)/workspace/|\1a/|; s|^\(+++ \)/app/|\2b/|' \
+      > /workspace-memory/pending-sandbox.patch; \
+    fi; \
+    exit \$EXIT_VAL
   "
 
 EXIT_CODE=$?
@@ -137,31 +145,8 @@ if [ $EXIT_CODE -eq 124 ]; then
     exit 124
 fi
 
-# Extract the diff patch safely from within container if success
+# Check if sandbox succeeded and copy patch to output
 if [ $EXIT_CODE -eq 0 ]; then
-    echo "✅ Sandbox execution succeeded. Synthesizing safe git diff patch..."
-    
-    # Generate the diff between the read-only /workspace and modified /app inside container
-    # Clean the path prefixes (/workspace/ -> a/ and /app/ -> b/) to make it standard git apply compatible
-    timeout 60 docker run --name "${CONTAINER_NAME}-diff" \
-      --cpus="$CPU_LIMIT" \
-      --memory="$MEM_LIMIT" \
-      -v "$MOUNT_DIR:/workspace:ro" \
-      -v "$MOUNT_DIR/.memory:/workspace-memory:rw" \
-      --network none \
-      "$IMAGE" \
-      bash -c "
-        mkdir -p /app && \
-        tar -cf - --exclude=node_modules --exclude=.git --exclude=.turbo -C /workspace . | tar -xf - -C /app && \
-        cd /app && \
-        $COMMAND >/dev/null 2>&1 && \
-        diff -ruN --exclude=node_modules --exclude=.git --exclude=.turbo /workspace /app | \
-        sed 's|^\(--- \)/workspace/|\1a/|; s|^\(+++ \)/app/|\2b/|' \
-        > /workspace-memory/pending-sandbox.patch
-      " >/dev/null 2>&1
-      
-    docker rm "${CONTAINER_NAME}-diff" >/dev/null 2>&1
-
     if [ -s "$MOUNT_DIR/.memory/pending-sandbox.patch" ]; then
         echo "💾 Saved diff patch to: $MOUNT_DIR/.memory/pending-sandbox.patch"
     else

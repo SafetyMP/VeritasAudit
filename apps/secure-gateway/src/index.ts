@@ -456,10 +456,12 @@ let activeSandboxContainers = 0;
 
 // Intelligent Auto-Throttling moving latency history
 let recentExecutionLatencies: number[] = [];
+let lastExecutionTimestamp: number = Date.now();
 const MAX_LATENCY_HISTORY = 10;
-const AUTO_THROTTLE_THRESHOLD_MS = 2000; // Increased to 2000ms to prevent standard Docker container startup latencies from triggering rate limits
+const AUTO_THROTTLE_THRESHOLD_MS = 8000; // Increased to 8000ms to prevent standard Docker container startup latencies from triggering rate limits
 
 export function addExecutionLatency(durationMs: number) {
+  lastExecutionTimestamp = Date.now();
   recentExecutionLatencies.push(durationMs);
   if (recentExecutionLatencies.length > MAX_LATENCY_HISTORY) {
     recentExecutionLatencies.shift();
@@ -468,12 +470,29 @@ export function addExecutionLatency(durationMs: number) {
 
 export function clearExecutionLatencies() {
   recentExecutionLatencies = [];
+  lastExecutionTimestamp = Date.now();
 }
 
 export function getMovingAverageLatency(): number {
+  const idleTimeMs = Date.now() - lastExecutionTimestamp;
+  
+  // Passive decay: if the system has been idle for more than 30 seconds, completely reset the latency history.
+  if (idleTimeMs > 30000) {
+    recentExecutionLatencies = [];
+    return 0;
+  }
+
   if (recentExecutionLatencies.length === 0) return 0;
   const sum = recentExecutionLatencies.reduce((a, b) => a + b, 0);
-  return sum / recentExecutionLatencies.length;
+  let average = sum / recentExecutionLatencies.length;
+
+  // Gradual decay: reduce the average by 20% for every 5 seconds of idle time
+  if (idleTimeMs > 5000) {
+    const decaySteps = Math.floor(idleTimeMs / 5000);
+    average = average * Math.pow(0.8, decaySteps);
+  }
+
+  return average;
 }
 
 export function isAutoThrottleActive(): boolean {
@@ -1058,7 +1077,7 @@ const MASTER_ROOT_KEYS = generateKeyPair();
 PUBLIC_KEY_MAP['sb:issuer:de073ae64e43'] = MASTER_ROOT_KEYS.publicKeyHex;
 
 // ==========================================
-// MuSig2 Threshold Cryptography: Role-specific SME Signing Keys
+// Consensus Gating: Role-specific SME Signing Keys (Simulated MuSig2)
 // In production, these would be derived from hardware security modules (HSM).
 // Each consensus role has a unique Ed25519 keypair for signature attestation.
 // ==========================================
@@ -1313,7 +1332,7 @@ app.post('/api/sandbox/execute', autoThrottleMiddleware, requireAuth(['admin', '
       return;
     }
 
-    // 3. eBPF system call level audit (Defense-in-depth verification)
+    // 3. Simulated seccomp system call level audit (Defense-in-depth verification)
     const syscallAudit = auditSandboxSyscalls(command);
 
     // 4. Consensus Gating Interceptor (Gates high-risk patterns OR seccomp blocks)
@@ -1324,7 +1343,7 @@ app.post('/api/sandbox/execute', autoThrottleMiddleware, requireAuth(['admin', '
         res.json({
           status: 'pending_consensus',
           actionId: existingPending.id,
-          message: `This command has been suspended under MuSig2 Consensus Gating. It requires ${existingPending.requiredVotes === 3 ? 'all 3 cryptographic key signatures (Admin, Developer, Auditor)' : '2 cryptographic approval signatures from authorized roles'} to execute.`
+          message: `This command has been suspended under Consensus Gating. It requires ${existingPending.requiredVotes === 3 ? 'all 3 cryptographic key signatures (Admin, Developer, Auditor)' : '2 cryptographic approval signatures from authorized roles'} to execute.`
         });
         return;
       }
@@ -1357,7 +1376,7 @@ app.post('/api/sandbox/execute', autoThrottleMiddleware, requireAuth(['admin', '
       res.json({
         status: 'pending_consensus',
         actionId: pendingAction.id,
-        message: `This command has been suspended under MuSig2 Consensus Gating. It requires ${(!syscallAudit.secure || audit.rating === 'dangerous') ? 'all 3 cryptographic key attestations (Admin, Developer, Auditor)' : '2 cryptographic approval signatures from authorized roles'} to execute.`
+        message: `This command has been suspended under Consensus Gating. It requires ${(!syscallAudit.secure || audit.rating === 'dangerous') ? 'all 3 cryptographic key attestations (Admin, Developer, Auditor)' : '2 cryptographic approval signatures from authorized roles'} to execute.`
       });
       return;
     }
@@ -2567,8 +2586,8 @@ app.post('/api/consensus/requests/:actionId/override', requireAuth(['admin']), a
   }
 });
 
-// POST /api/consensus/requests/:actionId/aggregate - MuSig2 Signature Aggregation (Role: admin, developer, auditor)
-// Computes a mathematically aggregated threshold signature from individual role attestations
+// POST /api/consensus/requests/:actionId/aggregate - Multi-Party Signature Aggregation (Role: admin, developer, auditor)
+// Simulates computing an aggregated threshold signature from individual role attestations
 app.post('/api/consensus/requests/:actionId/aggregate', requireAuth(['admin', 'developer', 'auditor']), async (req, res) => {
   try {
     const { actionId } = req.params;
@@ -2583,7 +2602,7 @@ app.post('/api/consensus/requests/:actionId/aggregate', requireAuth(['admin', 'd
 
     if (action.status !== 'approved') {
       res.status(400).json({ 
-        error: 'MuSig2 aggregation requires an approved action.',
+        error: 'Consensus signature aggregation requires an approved action.',
         message: `Action is currently in '${action.status}' state. All ${action.requiredVotes} attestation signatures must be collected first.`
       });
       return;
@@ -2599,8 +2618,8 @@ app.post('/api/consensus/requests/:actionId/aggregate', requireAuth(['admin', 'd
       publicKey: MUSIG2_ROLE_KEYS[app.role]?.publicKeyHex || 'unknown'
     }));
 
-    // MuSig2 Mathematical Aggregation Simulation
-    // In production, this would use Schnorr multi-signature aggregation (BIP-327)
+    // Consensus Signature Aggregation Simulation
+    // In production, this would use Schnorr multi-signature aggregation (BIP-327) or MuSig2.
     // R_agg = R₁ + R₂ + R₃, s_agg = s₁ + s₂ + s₃ (mod n)
     const signatureHexParts = individualSignatures.map((s: any) => s.signature);
     
@@ -2630,7 +2649,7 @@ app.post('/api/consensus/requests/:actionId/aggregate', requireAuth(['admin', 'd
       timestamp: new Date().toISOString()
     };
 
-    log('security', `🔐 MUSIG2 AGGREGATION COMPLETE: Action ${actionId} — ${individualSignatures.length} signatures aggregated into threshold signature.`);
+    log('security', `🔐 CONSENSUS AGGREGATION COMPLETE: Action ${actionId} — ${individualSignatures.length} signatures aggregated into threshold signature.`);
 
     broadcastWS('musig2_aggregation_complete', {
       actionId,
@@ -2638,13 +2657,13 @@ app.post('/api/consensus/requests/:actionId/aggregate', requireAuth(['admin', 'd
     });
 
     res.json({
-      message: 'MuSig2 threshold signature aggregation completed successfully.',
+      message: 'Consensus threshold signature aggregation completed successfully.',
       actionId,
       aggregateSignature
     });
   } catch (err: any) {
-    log('error', `MuSig2 aggregation failed: ${err.message}`);
-    res.status(500).json({ error: 'MuSig2 signature aggregation failed', message: err.message });
+    log('error', `Consensus aggregation failed: ${err.message}`);
+    res.status(500).json({ error: 'Consensus signature aggregation failed', message: err.message });
   }
 });
 

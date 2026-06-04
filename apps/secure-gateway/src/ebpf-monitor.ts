@@ -1,6 +1,6 @@
 /**
- * 🕵️ FidusGate Kernel-Level (eBPF-Inspired) Sandbox System Call Monitor
- * Analyzes command scripts to trace, validate, and log low-level kernel system calls.
+ * 🕵️ FidusGate Simulated Sandbox System Call Monitor
+ * Simulates system call traces, validation, and logs based on command strings.
  */
 
 export interface SyscallLog {
@@ -16,7 +16,7 @@ export interface EbpfAuditResult {
   violation?: string;
 }
 
-// Low-level forbidden system calls allowlist seccomp filter patterns
+// Simulated seccomp filter patterns mapping command strings to system calls
 const BLOCKED_SYSCALL_MAPPINGS = [
   { pattern: /sys_ptrace|ptrace/i, syscall: 'sys_ptrace', reason: 'Jail injection and debugging trace attempt' },
   { pattern: /sys_setns|setns/i, syscall: 'sys_setns', reason: 'Namespace boundary crossing jailbreak attempt' },
@@ -78,7 +78,7 @@ export function auditSandboxSyscalls(command: string): EbpfAuditResult {
       return {
         secure: false,
         syscalls,
-        violation: `Kernel Security Exception: ${item.reason} (${item.syscall}) blocked by seccomp filter at instruction pointer ${offset}.`
+        violation: `Security Exception: ${item.reason} (${item.syscall}) blocked by simulated seccomp filter at instruction pointer ${offset}.`
       };
     }
   }

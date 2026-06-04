@@ -1,6 +1,6 @@
 # ⚖️ FidusGate Documentation & Playbooks Portal
 
-Welcome to the FidusGate documentation and playbooks portal. This open-source repository serves as an **evergreen standard of capability** for AI DevSecOps governance. The portal provides detailed architectural specifications, continuous delivery manuals, walkthrough verification guides, and domain-scoped **SME Playbooks** defining mathematically auditable boundaries for autonomous agents.
+Welcome to the FidusGate documentation and playbooks portal. This open-source repository serves as an **evergreen reference implementation** for AI DevSecOps governance. The portal provides detailed architectural specifications, continuous delivery manuals, walkthrough verification guides, and domain-scoped **SME Playbooks** defining explicitly policy-enforced and auditable authorization boundaries for autonomous agents.
 
 ---
 
@@ -10,7 +10,7 @@ Use the links below to navigate our primary documentation suite:
 
 | Document Guide | Path | Focus & Target Audience |
 | :--- | :--- | :--- |
-| **⚖️ FidusGate Monorepo Architecture** | [ARCHITECTURE.md](file:///Users/sagehart/Documents/Antigravity%20Test%20Project/antigravity-custom-dev/docs/ARCHITECTURE.md) | High-level topologies, component details, Dockerized profiles, database setups, and premium feature architectures. |
+| **⚖️ FidusGate Monorepo Architecture** | [ARCHITECTURE.md](file:///Users/sagehart/Documents/Antigravity%20Test%20Project/antigravity-custom-dev/docs/ARCHITECTURE.md) | High-level topologies, component details, Dockerized profiles, database setups, and core feature architectures. |
 | **🚀 Local CI/CD Pipeline Emulation** | [local-ci-emulation.md](file:///Users/sagehart/Documents/Antigravity%20Test%20Project/antigravity-custom-dev/docs/local-ci-emulation.md) | Offline testing using `act`, secret provisioning, and pipeline prompt injection auditing with `agentic-actions-auditor`. |
 | **📡 Phase 3 Feature Walkthrough** | [walkthrough.md](file:///Users/sagehart/Documents/Antigravity%20Test%20Project/antigravity-custom-dev/docs/walkthrough.md) | Active filesystem drift auto-reconciliation models, Gemini policy co-pilots, and trunk-based semantic versioning releases. |
 | **📝 Enterprise Hardening Plan** | [implementation_plan.md](file:///Users/sagehart/Documents/Antigravity%20Test%20Project/antigravity-custom-dev/docs/implementation_plan.md) | Technical blueprint and database schema migrations for structured agent auto-fixes, KMS HSM signing, and WASI sandboxes. |
@@ -41,9 +41,9 @@ FidusGate models security boundaries by mapping available operations to dedicate
 * **`backend-sme`** | [SKILL.md](file:///Users/sagehart/Documents/Antigravity%20Test%20Project/antigravity-custom-dev/skills/backend-sme/SKILL.md)  
   *Express secure gateway configs, microservice handlers, and Prisma persistence operations.*
 * **`frontend-sme`** | [SKILL.md](file:///Users/sagehart/Documents/Antigravity%20Test%20Project/antigravity-custom-dev/skills/frontend-sme/SKILL.md)  
-  *Admin dashboard interfaces, glassmorphic rendering, and client receipt validators.*
+  *Admin dashboard interfaces, UI rendering, and client receipt validators.*
 * **`devops-sme`** | [SKILL.md](file:///Users/sagehart/Documents/Antigravity%20Test%20Project/antigravity-custom-dev/skills/devops-sme/SKILL.md)  
-  *Local execution sandboxes, Docker virtual volumes, and gVisor isolation controls.*
+  *Local execution sandboxes, Docker volumes, and gVisor isolation controls.*
 
 ### Developer Automation & Utilities
 * **`skill-creator`** | [SKILL.md](file:///Users/sagehart/Documents/Antigravity%20Test%20Project/antigravity-custom-dev/skills/skill-creator/SKILL.md)  
