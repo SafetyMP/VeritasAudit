@@ -45,12 +45,59 @@ function calculateCosineSimilarity(vecA: Map<string, number>, vecB: Map<string, 
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+function replaceHomoglyphs(str: string): string {
+  const homoglyphs: Record<string, string> = {
+    '\u0430': 'a', '\u0435': 'e', '\u043e': 'o', '\u0440': 'p', '\u0441': 'c',
+    '\u0443': 'y', '\u0445': 'x', '\u0456': 'i', '\u0458': 'j', '\u0455': 's',
+    '\u04bb': 'h',
+    '\u0410': 'a', '\u0415': 'e', '\u041e': 'o', '\u0420': 'p', '\u0421': 'c',
+    '\u0423': 'y', '\u0425': 'x', '\u0406': 'i', '\u0408': 'j', '\u0405': 's'
+  };
+  return str.split('').map(char => homoglyphs[char] || char).join('');
+}
+
+function normalizeText(text: string): string {
+  // Normalize homoglyphs first
+  let normalized = replaceHomoglyphs(text);
+
+  // Normalize Unicode (decomposing accents, combining characters)
+  normalized = normalized.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+
+  // Safely decode URL percent-encoding
+  try {
+    if (normalized.includes('%')) {
+      const decoded = decodeURIComponent(normalized);
+      if (decoded !== normalized) {
+        normalized = decoded;
+      }
+    }
+  } catch (err) {
+    // Ignore URL decode errors
+  }
+
+  return normalized;
+}
+
+function isPrintableText(str: string): boolean {
+  if (!str) return false;
+  let printableCount = 0;
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    // Common ASCII text characters (32-126, horizontal tab 9, line feed 10, carriage return 13)
+    if ((code >= 32 && code <= 126) || code === 9 || code === 10 || code === 13) {
+      printableCount++;
+    }
+  }
+  return (printableCount / str.length) > 0.85;
+}
+
 export function isPromptSecure(prompt: string): FirewallResult {
   if (!prompt || typeof prompt !== 'string') {
     return { secure: true, similarityScore: 0 };
   }
 
-  const promptLower = prompt.toLowerCase().trim();
+  const normalizedPrompt = normalizeText(prompt);
+  const promptLower = normalizedPrompt.toLowerCase().trim();
 
   // 1. Heuristic regex matcher
   const forbiddenPatterns = [
@@ -87,7 +134,31 @@ export function isPromptSecure(prompt: string): FirewallResult {
     };
   }
 
-  // 3. Local vector cosine similarity firewall (Zero-latency fallback checking)
+  // 3. Scan and recursively audit Base64 payloads (Use normalizedPrompt to preserve character case)
+  const base64Regex = /[A-Za-z0-9+/]{8,}=*/g;
+  let match;
+  base64Regex.lastIndex = 0;
+  while ((match = base64Regex.exec(normalizedPrompt)) !== null) {
+    const candidate = match[0];
+    try {
+      const decoded = Buffer.from(candidate, 'base64').toString('utf8');
+      if (decoded.length >= 6 && isPrintableText(decoded)) {
+        const decodedResult = isPromptSecure(decoded);
+        if (!decodedResult.secure) {
+          console.warn(`🛡️  [PROMPT FIREWALL BLOCKED]: Obfuscated Base64 injection detected: "${candidate}" -> "${decoded}"`);
+          return {
+            secure: false,
+            reason: `Adversarial obfuscated input blocked: Base64 payload contains blocked pattern.`,
+            similarityScore: decodedResult.similarityScore
+          };
+        }
+      }
+    } catch (err) {
+      // Ignore conversion/parsing failures
+    }
+  }
+
+  // 4. Local vector cosine similarity firewall (Zero-latency fallback checking)
   const inputVector = getTermFrequencyVector(promptLower);
   let maxSimilarity = 0;
 

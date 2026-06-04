@@ -14,16 +14,16 @@
     "signature": {
       "alg": "EdDSA",
       "kid": "sb:issuer:de073ae64e43",
-      "sig": "76578110f8775fe70e2d53a256e0d90749374c76befb4b3aeb6b20f927eda43a714c3dc2c41a067791a56cb10d0d6bd81c0f44f03b4f03bb3f1e65255d85b30e",
+      "sig": "ad6b92d8dd437dbe14a3c8c60b9437e42a1f0fa37aa3cdcbf2e07c7302646749fdec23fe80f03fd2a998f7157983d21b8817373444bb6cbe4966cde53c8a9008",
       "attestation": {
-        "sessionPublicKey": "302a300506032b657003210019116231c193961d0cea9cc9665a04f011fa3139b53b14de09d3769a63f73685",
+        "sessionPublicKey": "302a300506032b657003210073aa235b02a67a23f917027fd991334b03ebdfb47ece876cf3ece5f3704be200",
         "issuerId": "sb:issuer:de073ae64e43",
-        "expiresAt": "2026-06-05T00:31:42.072Z",
-        "attestationSignature": "19c576ed6679b245c86b582d88207cbc5e46bb82b83dbd057ee7a7eb97899a912184409bbd00f095803023361e47bc6456a6f4fd77c4d77f8352657bcf66ec0c"
+        "expiresAt": "2026-06-05T00:34:34.811Z",
+        "attestationSignature": "33905e0ceaa5d85fe2be9589a6e001922ca7f6c56462a9dedf60b523089918617a2d444bdf9ace33b12232eeacecfe1bc3fa87309721cb1312671bfe03464700"
       }
     },
-    "previousReceiptHash": "0c586cbcbd8d65640510635d379a7b55d2b009179c35a957f77e9523b29990ec",
-    "receiptHash": "694e9c7d0e59fdfce7737e5865f2f2293342921f2e1723e3aa0285bc052dfd6d"
+    "previousReceiptHash": "418f10d531cc2452e2b731d9acf5377cadac79a4cf8d2cb431560650c0fe2ada",
+    "receiptHash": "4adb0407479446c0e5f17e8829581e628e352c36000c0f79136abca192cf1565"
   },
   {
     "payload": {
@@ -40,16 +40,16 @@
     "signature": {
       "alg": "EdDSA",
       "kid": "sb:issuer:de073ae64e43",
-      "sig": "af31f30879f403df184b62627453d94640dddabd9212d894eb83111fabb0ac48ef7b76e4e3a44d3305c9ad09caf50e15d5a0997d13201ef8f74b3f105649d00c",
+      "sig": "9a65cdeaf3a49e73c05c71808574c1c8e2620157d5e33fdb43fd2ca94c23c0588d288160f60a325d9e629795b7a3667bb02c2f15cb6827e2c0348916850f5902",
       "attestation": {
-        "sessionPublicKey": "302a300506032b657003210019116231c193961d0cea9cc9665a04f011fa3139b53b14de09d3769a63f73685",
+        "sessionPublicKey": "302a300506032b657003210073aa235b02a67a23f917027fd991334b03ebdfb47ece876cf3ece5f3704be200",
         "issuerId": "sb:issuer:de073ae64e43",
-        "expiresAt": "2026-06-05T00:31:42.072Z",
-        "attestationSignature": "19c576ed6679b245c86b582d88207cbc5e46bb82b83dbd057ee7a7eb97899a912184409bbd00f095803023361e47bc6456a6f4fd77c4d77f8352657bcf66ec0c"
+        "expiresAt": "2026-06-05T00:34:34.811Z",
+        "attestationSignature": "33905e0ceaa5d85fe2be9589a6e001922ca7f6c56462a9dedf60b523089918617a2d444bdf9ace33b12232eeacecfe1bc3fa87309721cb1312671bfe03464700"
       }
     },
-    "previousReceiptHash": "e2715cb0473d368fb4632b5e30a1094832cd4bd734344d615f6d2e731fc27ef4",
-    "receiptHash": "0c586cbcbd8d65640510635d379a7b55d2b009179c35a957f77e9523b29990ec"
+    "previousReceiptHash": "1d8c07fad9b9ac66e8042213b940ac3ca07f4e28f3151cc37f449239b70d309c",
+    "receiptHash": "418f10d531cc2452e2b731d9acf5377cadac79a4cf8d2cb431560650c0fe2ada"
   },
   {
     "payload": {
@@ -66,16 +66,16 @@
     "signature": {
       "alg": "EdDSA",
       "kid": "sb:issuer:de073ae64e43",
-      "sig": "33b6c8d7ffbf1b6080fa2e0c6bd85b7a614c1544c22980cf86913a2888b48d8361a6c4a76f18a1a6e40b2ffcf4f053f4f2baa7d50d70ef7ee73b0bedad37250c",
+      "sig": "1821f6dfd8f0dd93a9eb663befc67bb5dce0f2b19138f21302c2d50db09d80c40cecac868e4a4cb991fdce9977df4415fae791ec0f50c921847bb91f45c26e02",
       "attestation": {
-        "sessionPublicKey": "302a300506032b657003210019116231c193961d0cea9cc9665a04f011fa3139b53b14de09d3769a63f73685",
+        "sessionPublicKey": "302a300506032b657003210073aa235b02a67a23f917027fd991334b03ebdfb47ece876cf3ece5f3704be200",
         "issuerId": "sb:issuer:de073ae64e43",
-        "expiresAt": "2026-06-05T00:31:42.072Z",
-        "attestationSignature": "19c576ed6679b245c86b582d88207cbc5e46bb82b83dbd057ee7a7eb97899a912184409bbd00f095803023361e47bc6456a6f4fd77c4d77f8352657bcf66ec0c"
+        "expiresAt": "2026-06-05T00:34:34.811Z",
+        "attestationSignature": "33905e0ceaa5d85fe2be9589a6e001922ca7f6c56462a9dedf60b523089918617a2d444bdf9ace33b12232eeacecfe1bc3fa87309721cb1312671bfe03464700"
       }
     },
-    "previousReceiptHash": "0fd837bae9cb6502aaeb7bf4cdcf2c4c7054281ca359eabdc34660972333bfa0",
-    "receiptHash": "e2715cb0473d368fb4632b5e30a1094832cd4bd734344d615f6d2e731fc27ef4"
+    "previousReceiptHash": "810fd848081c7fe2472d30305417acff3c66d4a66053a3ceffbcc19d00b5c852",
+    "receiptHash": "1d8c07fad9b9ac66e8042213b940ac3ca07f4e28f3151cc37f449239b70d309c"
   },
   {
     "payload": {
@@ -93,16 +93,16 @@
     "signature": {
       "alg": "EdDSA",
       "kid": "sb:issuer:de073ae64e43",
-      "sig": "cbcefeae56ccedfdf5d268161b28e75348349242df8122275eeb94ae240897f7ba1a2aeb28ba06ad19adb037ebba53c3665230dbe8b10fff0afa6c9f4da7bf06",
+      "sig": "fe6a7bb11c4544b3dd2f3a17f5f979824dd9fdff983be3ff8e27c6ea7aae2e09ee8c715debfedd165d223f2a73a3f8cd1237284ec62c8cd9687bac9f0996cd0b",
       "attestation": {
-        "sessionPublicKey": "302a300506032b657003210019116231c193961d0cea9cc9665a04f011fa3139b53b14de09d3769a63f73685",
+        "sessionPublicKey": "302a300506032b657003210073aa235b02a67a23f917027fd991334b03ebdfb47ece876cf3ece5f3704be200",
         "issuerId": "sb:issuer:de073ae64e43",
-        "expiresAt": "2026-06-05T00:31:42.072Z",
-        "attestationSignature": "19c576ed6679b245c86b582d88207cbc5e46bb82b83dbd057ee7a7eb97899a912184409bbd00f095803023361e47bc6456a6f4fd77c4d77f8352657bcf66ec0c"
+        "expiresAt": "2026-06-05T00:34:34.811Z",
+        "attestationSignature": "33905e0ceaa5d85fe2be9589a6e001922ca7f6c56462a9dedf60b523089918617a2d444bdf9ace33b12232eeacecfe1bc3fa87309721cb1312671bfe03464700"
       }
     },
-    "previousReceiptHash": "ea757c49eb48588fcf0add1646c7349748c30d08ae92a7e8d3669a88e5bc84a0",
-    "receiptHash": "0fd837bae9cb6502aaeb7bf4cdcf2c4c7054281ca359eabdc34660972333bfa0"
+    "previousReceiptHash": "5e06f05a9c9c2b62410808d2d6323b1c769c4ca5e4eed922809310eec6e79868",
+    "receiptHash": "810fd848081c7fe2472d30305417acff3c66d4a66053a3ceffbcc19d00b5c852"
   },
   {
     "payload": {
@@ -120,16 +120,16 @@
     "signature": {
       "alg": "EdDSA",
       "kid": "sb:issuer:de073ae64e43",
-      "sig": "f7bc81fefaf870da21cb288fa4ded224479ab03ec35f3e18f2f1530f1f926e285c8ea025461a11f419c5bf2701d81b7dffacb1ced8eef364f4c3792949ee1c0b",
+      "sig": "8cd246841050eb3de1702d5ab4d6e6660306d32d45e110f4d07f97e7f8ecc71de91cce5138b18d5016ae06c78c9eddee058f8c497242da35eeede2580606bd0a",
       "attestation": {
-        "sessionPublicKey": "302a300506032b657003210019116231c193961d0cea9cc9665a04f011fa3139b53b14de09d3769a63f73685",
+        "sessionPublicKey": "302a300506032b657003210073aa235b02a67a23f917027fd991334b03ebdfb47ece876cf3ece5f3704be200",
         "issuerId": "sb:issuer:de073ae64e43",
-        "expiresAt": "2026-06-05T00:31:42.072Z",
-        "attestationSignature": "19c576ed6679b245c86b582d88207cbc5e46bb82b83dbd057ee7a7eb97899a912184409bbd00f095803023361e47bc6456a6f4fd77c4d77f8352657bcf66ec0c"
+        "expiresAt": "2026-06-05T00:34:34.811Z",
+        "attestationSignature": "33905e0ceaa5d85fe2be9589a6e001922ca7f6c56462a9dedf60b523089918617a2d444bdf9ace33b12232eeacecfe1bc3fa87309721cb1312671bfe03464700"
       }
     },
-    "previousReceiptHash": "23ebb68858bf72e6df72ded6ea846b355686f71d962fd72f16ee2568f00f7947",
-    "receiptHash": "ea757c49eb48588fcf0add1646c7349748c30d08ae92a7e8d3669a88e5bc84a0"
+    "previousReceiptHash": "2bf2a0f07cce2f2fefe1d17f4b2d9f0cf01bca215c4f5266bfaf6dbfe81ce13a",
+    "receiptHash": "5e06f05a9c9c2b62410808d2d6323b1c769c4ca5e4eed922809310eec6e79868"
   },
   {
     "payload": {
@@ -147,16 +147,16 @@
     "signature": {
       "alg": "EdDSA",
       "kid": "sb:issuer:de073ae64e43",
-      "sig": "317ee05fb8675d479cf8674ec0f7e39339ac2496c55716d1cc4bcdd095f93da17cc3fa9d797f9d8eb13e2e316c84c8e8fdccaa082cbb6b264c62ffb707470008",
+      "sig": "7b56cef4b78351e8cf371360c06046c0484732c41731e9ec150b4c9a22d0e1ed00bc5c411ea79d27fb786ecbc24aceb4e1d15f7c3d52e8e2e8bdeef6a3ff460c",
       "attestation": {
-        "sessionPublicKey": "302a300506032b657003210019116231c193961d0cea9cc9665a04f011fa3139b53b14de09d3769a63f73685",
+        "sessionPublicKey": "302a300506032b657003210073aa235b02a67a23f917027fd991334b03ebdfb47ece876cf3ece5f3704be200",
         "issuerId": "sb:issuer:de073ae64e43",
-        "expiresAt": "2026-06-05T00:31:42.072Z",
-        "attestationSignature": "19c576ed6679b245c86b582d88207cbc5e46bb82b83dbd057ee7a7eb97899a912184409bbd00f095803023361e47bc6456a6f4fd77c4d77f8352657bcf66ec0c"
+        "expiresAt": "2026-06-05T00:34:34.811Z",
+        "attestationSignature": "33905e0ceaa5d85fe2be9589a6e001922ca7f6c56462a9dedf60b523089918617a2d444bdf9ace33b12232eeacecfe1bc3fa87309721cb1312671bfe03464700"
       }
     },
-    "previousReceiptHash": "3f592b0fc38f286c49c027348be08e5c65d7c77aa68e8358e35d91a1286d802d",
-    "receiptHash": "23ebb68858bf72e6df72ded6ea846b355686f71d962fd72f16ee2568f00f7947"
+    "previousReceiptHash": "8124d8651cf3ed5165e35e73033bba91caa4ba18710f32b1e539e2432314b88d",
+    "receiptHash": "2bf2a0f07cce2f2fefe1d17f4b2d9f0cf01bca215c4f5266bfaf6dbfe81ce13a"
   },
   {
     "payload": {
@@ -174,16 +174,16 @@
     "signature": {
       "alg": "EdDSA",
       "kid": "sb:issuer:de073ae64e43",
-      "sig": "209dd9f06fd3e0ece115bac4cc6f6e8c783f79fdeb72a97c26fcfc322c5b413b97e35a583f315a27d1f16b307f6a2a62be28e015cacd374a006970a4c45a7002",
+      "sig": "e4949e518e5cf2bc2527a3afed082d3b6716b35dcac49f0a4dac16a2e42388df6e695ccbc9ca8592b4d2382041619b1bf69c5160feb6893ac14fc6d5ee9d8000",
       "attestation": {
-        "sessionPublicKey": "302a300506032b657003210019116231c193961d0cea9cc9665a04f011fa3139b53b14de09d3769a63f73685",
+        "sessionPublicKey": "302a300506032b657003210073aa235b02a67a23f917027fd991334b03ebdfb47ece876cf3ece5f3704be200",
         "issuerId": "sb:issuer:de073ae64e43",
-        "expiresAt": "2026-06-05T00:31:42.072Z",
-        "attestationSignature": "19c576ed6679b245c86b582d88207cbc5e46bb82b83dbd057ee7a7eb97899a912184409bbd00f095803023361e47bc6456a6f4fd77c4d77f8352657bcf66ec0c"
+        "expiresAt": "2026-06-05T00:34:34.811Z",
+        "attestationSignature": "33905e0ceaa5d85fe2be9589a6e001922ca7f6c56462a9dedf60b523089918617a2d444bdf9ace33b12232eeacecfe1bc3fa87309721cb1312671bfe03464700"
       }
     },
-    "previousReceiptHash": "a4e5edb7d4df85bc67fea5f3abbf178aa3330640f6440e51e2fbbb6e8e2b45a4",
-    "receiptHash": "3f592b0fc38f286c49c027348be08e5c65d7c77aa68e8358e35d91a1286d802d"
+    "previousReceiptHash": "1ead3e33c3c99b74ab6ee67fd7db3ab863f39ab38f0489dea7da65578ad97d02",
+    "receiptHash": "8124d8651cf3ed5165e35e73033bba91caa4ba18710f32b1e539e2432314b88d"
   },
   {
     "payload": {
@@ -201,16 +201,16 @@
     "signature": {
       "alg": "EdDSA",
       "kid": "sb:issuer:de073ae64e43",
-      "sig": "0c6ddbda9caeb5e8827cd1b1f01c11b09e385b9003fb565ffda13121143a656389297989cca807204f5d75a6d7eafe742b8460491f599672bc137a9d03a5fd05",
+      "sig": "b70dc39cb58c768e47dc515458958db8ad3c980d543f8fb794f2642434d353479ab1f86de13bfbd078bba330d0ec2b59890346f61d3a021e20bbc295972d7506",
       "attestation": {
-        "sessionPublicKey": "302a300506032b657003210019116231c193961d0cea9cc9665a04f011fa3139b53b14de09d3769a63f73685",
+        "sessionPublicKey": "302a300506032b657003210073aa235b02a67a23f917027fd991334b03ebdfb47ece876cf3ece5f3704be200",
         "issuerId": "sb:issuer:de073ae64e43",
-        "expiresAt": "2026-06-05T00:31:42.072Z",
-        "attestationSignature": "19c576ed6679b245c86b582d88207cbc5e46bb82b83dbd057ee7a7eb97899a912184409bbd00f095803023361e47bc6456a6f4fd77c4d77f8352657bcf66ec0c"
+        "expiresAt": "2026-06-05T00:34:34.811Z",
+        "attestationSignature": "33905e0ceaa5d85fe2be9589a6e001922ca7f6c56462a9dedf60b523089918617a2d444bdf9ace33b12232eeacecfe1bc3fa87309721cb1312671bfe03464700"
       }
     },
     "previousReceiptHash": "",
-    "receiptHash": "a4e5edb7d4df85bc67fea5f3abbf178aa3330640f6440e51e2fbbb6e8e2b45a4"
+    "receiptHash": "1ead3e33c3c99b74ab6ee67fd7db3ab863f39ab38f0489dea7da65578ad97d02"
   },
   {
     "payload": {
@@ -218,7 +218,7 @@
       "tool_name": "read_file",
       "decision": "allow",
       "policy_digest": "sha256:8f413a9de010",
-      "issued_at": "2026-06-04T22:31:28.537Z",
+      "issued_at": "2026-06-04T22:33:59.234Z",
       "issuer_id": "sb:issuer:de073ae64e43",
       "reason": "Tier 1 low-risk file read auto-approved",
       "claimed_issuer_tier": 1
@@ -235,7 +235,7 @@
       "tool_name": "write_file",
       "decision": "allow",
       "policy_digest": "sha256:8f413a9de010",
-      "issued_at": "2026-06-04T23:01:28.537Z",
+      "issued_at": "2026-06-04T23:03:59.234Z",
       "issuer_id": "sb:issuer:de073ae64e43",
       "reason": "Tier 2 file modification in approved src/ directory allowed",
       "claimed_issuer_tier": 2
@@ -252,7 +252,7 @@
       "tool_name": "execute_command",
       "decision": "deny",
       "policy_digest": "sha256:8f413a9de010",
-      "issued_at": "2026-06-04T23:16:28.537Z",
+      "issued_at": "2026-06-04T23:18:59.234Z",
       "issuer_id": "sb:issuer:de073ae64e43",
       "reason": "Tier 3 command execution blocked: skill-creator requires explicit manual verification",
       "claimed_issuer_tier": 3
