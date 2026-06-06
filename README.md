@@ -193,9 +193,10 @@ FidusGate includes a suite of security policy simulation and observability tools
 * **Unified package format:** Allows exporting a signed compliance receipt compiling sandbox logs, simulated SPIFFE identifiers, OIDC attestation claims, and Ed25519 signatures into a structured JSON envelope.
 * **Access controls:** Access to forensic compliance reports is restricted to `admin` or `auditor` roles to prevent credential harvesting.
 
-### 🤖 3. AI-Agent Auto-Remediation Suggestions
+### 🤖 3. AI-Agent Auto-Remediation Suggestions & Suggested Autofixes
 * **Corrective guidance:** When the Command Auditor intercepts a blocked command (e.g. an agent trying to run `curl http://...`), the gateway returns a remediation recommendation (e.g. *suggesting configured mirrors or cached local files*).
-* **Self-Correction loop:** Remediations are packaged in `/api/sandbox/execute` responses, allowing autonomous agent workflows to parse and self-correct tool execution errors.
+* **Suggested Autofixes:** The gateway returns a structured `suggestedAutofix` object containing the `target` forbidden command and its safe `replacement` command (e.g., automatically rewriting dynamic `pip install` commands to run safely inside the sandbox container).
+* **One-Click Console Banner:** FidusGate's Sandbox Console UI automatically displays a collapsible auto-fix banner if a command execution fails with a suggested autofix, featuring an interactive **"Apply Fix"** button to execute the replacement command with a single click.
 
 ### 📐 4. Collapsible Server Architecture Guide
 * **Dashboard Integration:** An interactive guide integrated as a collapsible accordion section right before the terminal console.

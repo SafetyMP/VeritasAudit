@@ -56,9 +56,7 @@ The database client was statefully upgraded to track hash-chain digests and enfo
 
 ## 🛡️ 3. Secure Gateway Integration (`apps/secure-gateway`)
 
-The core Node.js gateway was instrumented with active security middleware, JSON autofix engines, and performance metrics:
-
-- **JSON Autofixes:** Extended `command-auditor.ts` to return structured `suggestedAutofix` blocks when restricting developer/agent shell operations (e.g. suggesting safe `npm run bootstrap` workspaces).
+- **JSON Autofixes:** Extended `command-auditor.ts` to return structured `suggestedAutofix` blocks when restricting developer/agent shell operations (e.g. suggesting safe `npm run bootstrap` workspaces). This autofix payload is now integrated into the `/api/sandbox/execute` route responses and verified in tests.
 - **Emergency Circuit Breaker:** Mounted global Express middleware that intercepts all incoming agent queries and blocks command executions instantly when `circuitBreakerActive === true` is toggled in the DB.
 - **OpenTelemetry Observability:** Integrated standard performance counters and duration hooks tracing authentication gateways, Cedar evaluations, and database transaction rates.
 - **Hot-Reload Commit API:** Added the secure `POST /api/policy/apply` administrative endpoint to programmatically write and instantly reload Cedar policies on the active host filesystem (`policy.cedar`).
@@ -84,6 +82,11 @@ Added as a widescreen sidebar console inside the **Cedar Policy Tab**:
 
 ### 📊 OpenTelemetry Telemetry Cards
 Added a dedicated OTel Latency & Rate Tracing card displaying micro-sparkline metrics that reflect real-time active or flatlined statistics based on circuit breaker states.
+
+### 💡 Interactive Suggested Autofixes Banner
+Added a dedicated, collapsible **Suggested Autofix Banner** above the Sandbox Console prompt. If a shell command execution fails due to a policy block (e.g., trying to install packages directly or running forbidden utilities):
+- The banner displays the proposed safe replacement command.
+- Clicking the **"Apply Fix"** button automatically executes the safe command in the isolated sandbox, clearing the input and resolving the policy violation in one click.
 
 ### 🔑 4.5. Multi-Role Consensus Attestation & Execution Bypass (Phase 4)
 * **Cryptographic Attestation & Proposer Block:** Implemented strict Zero-Trust consensus controls preventing the proposer of a command from self-attesting. The "Attest & Sign" button displays an **"Initiator Blocked"** badge if the logged-in user email matches the action's proposer.
