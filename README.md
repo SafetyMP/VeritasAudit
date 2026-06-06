@@ -115,6 +115,7 @@ graph TD
         Crypto["packages/crypto-utils (Ed25519)"]
         DB["packages/database (JSON/Prisma)"]
         Action["packages/github-action (CI Gate)"]
+        Daemon["packages/cedar-daemon (Rust HTTP)"]
     end
 
     %% Sandboxed Verification Pipelines
@@ -130,6 +131,7 @@ graph TD
     Gateway --> Types
     Gateway --> Crypto
     Gateway --> DB
+    Gateway --> Daemon
     Dashboard --> Types
     Action --> Crypto
     Action --> Types
@@ -145,8 +147,9 @@ graph TD
 2.  **`packages/crypto-utils`**: Encapsulates cryptographic signing and verification routines powered by **Ed25519** public-key cryptography.
 3.  **`packages/database`**: A demonstration database module utilizing a seeded local JSON store for offline capability verification, with pluggable support for standard SQL databases (e.g. PostgreSQL via Prisma). Production deployments require a real database configuration.
 4.  **`packages/github-action`**: A custom GitHub Action guard that validates workflows, scans for prompt injections, and verifies commit receipts.
-5.  **`apps/secure-gateway`**: Express microservice exposing transaction APIs with automatic PII (Personally Identifiable Information) masking and signature signing, designed to interface with database persistence layers.
-6.  **`apps/admin-dashboard`**: A React operations dashboard with a receipt verifier, live logs, and command console.
+5.  **`packages/cedar-daemon`**: A high-performance Rust-native HTTP microservice wrapping the official Rust `cedar-policy` engine on Port 50051. The secure gateway queries this service to perform zero-trust policy decisions with sub-millisecond latencies.
+6.  **`apps/secure-gateway`**: Express microservice exposing transaction APIs with automatic PII (Personally Identifiable Information) masking and signature signing, querying the Cedar Rust daemon with a fallback to a local TypeScript parser.
+7.  **`apps/admin-dashboard`**: A React operations dashboard with a receipt verifier, live logs, consensus attestation panels, and command console.
 
 ---
 
