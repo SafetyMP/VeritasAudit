@@ -2,6 +2,17 @@
 # Pre-commit Git Hook: Scans for HAM Scoped Memory (CLAUDE.md) Drift
 # Author: Antigravity Code Assistant
 
+# ==========================================
+# 0. DYNAMIC FEEDBACK & CROSS-AGENT LEARNING ASSIMILATION
+# ==========================================
+echo "🧠 Running FidusGate Cross-Agent Learning Assimilation Check..."
+node scripts/assimilate-feedback.js
+LEARNING_EXIT=$?
+if [ $LEARNING_EXIT -ne 0 ]; then
+    echo "❌ Feedback assimilation failed. Commit blocked."
+    exit $LEARNING_EXIT
+fi
+
 echo "🔍 Running HAM Scoped Memory (CLAUDE.md) Drift Audit..."
 
 # Get staged files
@@ -101,9 +112,38 @@ if [ -n "$STAGED_CODE_FILES" ]; then
     if [ -n "$TEST_CMD" ]; then
         # Check if Turborepo is used, which has cross-OS native binary requirements
         if [ -f "turbo.json" ]; then
-            echo "   Turborepo monorepo detected. Running tests directly on the host to prevent cross-OS binary mismatches..."
-            eval "$TEST_CMD"
-            TEST_EXIT=$?
+            echo "   Turborepo monorepo detected. Compiling package change filter..."
+            FILTER_ARGS=""
+            for file in $STAGED_FILES; do
+                if [[ "$file" == apps/secure-gateway/* ]]; then
+                    FILTER_ARGS="$FILTER_ARGS --filter=@fidusgate/secure-gateway"
+                elif [[ "$file" == apps/admin-dashboard/* ]]; then
+                    FILTER_ARGS="$FILTER_ARGS --filter=@fidusgate/admin-dashboard"
+                elif [[ "$file" == packages/database/* ]]; then
+                    FILTER_ARGS="$FILTER_ARGS --filter=@fidusgate/database"
+                elif [[ "$file" == packages/crypto-utils/* ]]; then
+                    FILTER_ARGS="$FILTER_ARGS --filter=@fidusgate/crypto-utils"
+                elif [[ "$file" == packages/cedar-daemon/* ]]; then
+                    FILTER_ARGS="$FILTER_ARGS --filter=@fidusgate/cedar-daemon"
+                elif [[ "$file" == packages/github-action/* ]]; then
+                    FILTER_ARGS="$FILTER_ARGS --filter=@fidusgate/github-action"
+                elif [[ "$file" == packages/core-types/* ]]; then
+                    FILTER_ARGS="$FILTER_ARGS --filter=@fidusgate/core-types"
+                fi
+            done
+            
+            # Remove duplicate filters and trim whitespace
+            FILTER_ARGS=$(echo "$FILTER_ARGS" | tr ' ' '\n' | sort -u | tr '\n' ' ' | xargs)
+            
+            if [ -n "$FILTER_ARGS" ]; then
+                echo "   Running incremental tests for staged packages: $FILTER_ARGS"
+                npm run test -- $FILTER_ARGS
+                TEST_EXIT=$?
+            else
+                echo "   No staged changes in package source directories. Running all tests..."
+                eval "$TEST_CMD"
+                TEST_EXIT=$?
+            fi
         else
             # Run test command inside isolated sandbox
             bash scripts/sandbox-execute.sh "$TEST_CMD" "$(pwd)"

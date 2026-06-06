@@ -16,6 +16,7 @@ permit(
   || resource.tool_name == "list_directory"
   || resource.tool_name == "grep_search"
   || resource.tool_name == "view_file"
+  || resource.tool_name == "search_code"
 };
 
 // ------------------------------------------
@@ -32,6 +33,7 @@ permit(
     resource.tool_name == "write_file"
     || resource.tool_name == "replace_file_content"
     || resource.tool_name == "multi_replace_file_content"
+    || resource.tool_name == "patch_file"
   )
   && resource has args
   && (
@@ -51,12 +53,14 @@ forbid(
     resource.tool_name == "write_file"
     || resource.tool_name == "replace_file_content"
     || resource.tool_name == "multi_replace_file_content"
+    || resource.tool_name == "patch_file"
   )
   && resource has args
   && (
     resource.args.path == "policy.cedar"
     || resource.args.path == "protect-mcp.config.json"
     || resource.args.path like "scripts/*"
+    || resource.args.path.contains(".env")
   )
   && !(principal == "sb:issuer:security-sme" || principal == "sb:issuer:de073ae64e43")
 };
@@ -87,6 +91,23 @@ permit(
 ) when {
   resource.tool_name == "execute_command"
   && principal == "sb:issuer:de073ae64e43"
+};
+
+// Permit memory retrieval and feedback assimilation commands for all agents.
+// These are required for session bootstrapping per CLAUDE.md and must not be blocked
+// by the Tier 3 forbid rule, even for non-developer principals.
+permit(
+  principal,
+  action == Action::"call_tool",
+  resource
+) when {
+  resource.tool_name == "execute_command"
+  && resource has args
+  && (
+    resource.args.commandLine like "npm run memory:context*"
+    || resource.args.commandLine like "node scripts/assimilate-feedback.js*"
+    || resource.args.commandLine like "npm run policy:dry-run*"
+  )
 };
 
 forbid(
@@ -193,7 +214,7 @@ forbid(
 };
 
 // Enforce session financial/token budget alignment.
-// Forbid launching high-cost operations (Tiers 3/4) if the token consumption budget is exceeded.
+// Forbid launching high-cost operations (Tiers 3/4) if the token consumption budget is critically low (exceeds 95%).
 forbid(
   principal,
   action == Action::"call_tool",
@@ -205,7 +226,18 @@ forbid(
     resource.args.commandLine.contains("sandbox-execute.sh")
     || resource.args.commandLine.contains("ci-verify.sh")
   )
-  && !context.ibp.budget_aligned
+  && context.ibp.budget_exhaustion_percentage > 95
+};
+
+// Enforce subagent specific token budget alignment.
+// Forbid any tool calls if the subagent budget has been exhausted (subagent_budget_aligned is false).
+forbid(
+  principal,
+  action == Action::"call_tool",
+  resource
+) when {
+  context.ibp has subagent_budget_aligned
+  && !context.ibp.subagent_budget_aligned
 };
 
 // ==========================================
@@ -223,6 +255,7 @@ forbid(
     resource.tool_name == "write_file"
     || resource.tool_name == "replace_file_content"
     || resource.tool_name == "multi_replace_file_content"
+    || resource.tool_name == "patch_file"
   )
   && resource has args
   && (
@@ -315,6 +348,7 @@ forbid(
     resource.tool_name == "write_file"
     || resource.tool_name == "replace_file_content"
     || resource.tool_name == "multi_replace_file_content"
+    || resource.tool_name == "patch_file"
   )
   && resource has args
   && (
@@ -334,6 +368,7 @@ forbid(
     resource.tool_name == "write_file"
     || resource.tool_name == "replace_file_content"
     || resource.tool_name == "multi_replace_file_content"
+    || resource.tool_name == "patch_file"
   )
   && resource has args
   && resource.args.path like "apps/admin-dashboard/*"
@@ -350,6 +385,7 @@ forbid(
     resource.tool_name == "write_file"
     || resource.tool_name == "replace_file_content"
     || resource.tool_name == "multi_replace_file_content"
+    || resource.tool_name == "patch_file"
   )
   && resource has args
   && (
@@ -369,6 +405,7 @@ forbid(
     resource.tool_name == "write_file"
     || resource.tool_name == "replace_file_content"
     || resource.tool_name == "multi_replace_file_content"
+    || resource.tool_name == "patch_file"
   )
   && resource has args
   && (
@@ -388,6 +425,7 @@ forbid(
     resource.tool_name == "write_file"
     || resource.tool_name == "replace_file_content"
     || resource.tool_name == "multi_replace_file_content"
+    || resource.tool_name == "patch_file"
   )
   && resource has args
   && (
@@ -407,6 +445,7 @@ forbid(
     resource.tool_name == "write_file"
     || resource.tool_name == "replace_file_content"
     || resource.tool_name == "multi_replace_file_content"
+    || resource.tool_name == "patch_file"
   )
   && resource has args
   && resource.args.path == "CHANGELOG.md"
@@ -427,6 +466,7 @@ permit(
     resource.tool_name == "write_file"
     || resource.tool_name == "replace_file_content"
     || resource.tool_name == "multi_replace_file_content"
+    || resource.tool_name == "patch_file"
   )
   && resource has args
   && (
@@ -446,6 +486,7 @@ permit(
     resource.tool_name == "write_file"
     || resource.tool_name == "replace_file_content"
     || resource.tool_name == "multi_replace_file_content"
+    || resource.tool_name == "patch_file"
   )
   && resource has args
   && (
@@ -465,6 +506,7 @@ permit(
     resource.tool_name == "write_file"
     || resource.tool_name == "replace_file_content"
     || resource.tool_name == "multi_replace_file_content"
+    || resource.tool_name == "patch_file"
   )
   && resource has args
   && resource.args.path == "CHANGELOG.md"
@@ -474,12 +516,20 @@ permit(
 // ------------------------------------------
 // LOCAL DEVELOPMENT BYPASS
 // ------------------------------------------
-// Allow local testing agent (mcp-agent) to perform tool calls in shadow/enforce testing mode.
+// Allow local testing agent (mcp-agent) READ-ONLY access for shadow/enforce testing mode.
+// Narrowed from a blanket permit to Tier 1 tools only to prevent privilege escalation
+// via a spoofed principal name.
 permit(
   principal,
   action == Action::"call_tool",
   resource
 ) when {
   principal == "mcp-agent@fidusgate.internal"
+  && (
+    resource.tool_name == "read_file"
+    || resource.tool_name == "list_directory"
+    || resource.tool_name == "grep_search"
+    || resource.tool_name == "view_file"
+    || resource.tool_name == "search_code"
+  )
 };
-

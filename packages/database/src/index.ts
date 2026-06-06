@@ -48,12 +48,78 @@ const COMMAND_LOGS_FILE = path.join(DATA_DIR, 'command-logs.json');
 const DRIFTS_FILE = path.join(DATA_DIR, 'drifts.json');
 const BUDGET_EXTENSIONS_FILE = path.join(DATA_DIR, 'budget-extensions.json');
 
+function sleepSync(ms: number) {
+  try {
+    const sab = new SharedArrayBuffer(4);
+    const int32 = new Int32Array(sab);
+    Atomics.wait(int32, 0, 0, ms);
+  } catch (e) {
+    const limit = Date.now() + ms;
+    while (Date.now() < limit) {}
+  }
+}
+
+function acquireLock(lockPath: string) {
+  const start = Date.now();
+  const timeout = 5000;
+  while (true) {
+    try {
+      fs.writeFileSync(lockPath, process.pid.toString(), { flag: 'wx' });
+      return;
+    } catch (e: any) {
+      if (e.code === 'EEXIST') {
+        try {
+          const stat = fs.statSync(lockPath);
+          if (Date.now() - stat.mtimeMs > 10000) {
+            fs.unlinkSync(lockPath);
+            continue;
+          }
+        } catch (err) {}
+
+        if (Date.now() - start > timeout) {
+          throw new Error(`Timeout acquiring lock on: ${lockPath}`);
+        }
+        sleepSync(50);
+      } else {
+        throw e;
+      }
+    }
+  }
+}
+
+function releaseLock(lockPath: string) {
+  try {
+    if (fs.existsSync(lockPath)) {
+      fs.unlinkSync(lockPath);
+    }
+  } catch (e) {}
+}
+
 // POSIX-compliant atomic file writer helper to prevent JSON database file corruption
 function writeJsonAtomic(filePath: string, data: any) {
   const dir = path.dirname(filePath);
   const tempPath = path.join(dir, `${path.basename(filePath)}.${Math.random().toString(36).substring(2)}.tmp`);
   fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
   fs.renameSync(tempPath, filePath);
+}
+
+function lockAndModify(filePath: string, modifyFn: (currentData: any) => any, defaultValue: any = []) {
+  const lockPath = `${filePath}.lock`;
+  acquireLock(lockPath);
+  try {
+    let currentData = defaultValue;
+    if (fs.existsSync(filePath)) {
+      try {
+        currentData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      } catch (e) {
+        currentData = defaultValue;
+      }
+    }
+    const updatedData = modifyFn(currentData);
+    writeJsonAtomic(filePath, updatedData);
+  } finally {
+    releaseLock(lockPath);
+  }
 }
 
 const INITIAL_TRANSACTIONS: Transaction[] = [
@@ -185,30 +251,35 @@ export class FidusGateDatabase {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
-    
-    if (!fs.existsSync(TX_FILE)) {
-      writeJsonAtomic(TX_FILE, INITIAL_TRANSACTIONS);
-    }
-    
-    if (!fs.existsSync(RECEIPTS_FILE)) {
-      writeJsonAtomic(RECEIPTS_FILE, INITIAL_RECEIPTS);
-    }
-    
-    if (!fs.existsSync(FINDINGS_FILE)) {
-      writeJsonAtomic(FINDINGS_FILE, []);
-    }
 
-    if (!fs.existsSync(COMMAND_LOGS_FILE)) {
-      writeJsonAtomic(COMMAND_LOGS_FILE, []);
-    }
+    const copyTemplateOrWriteDefault = (filePath: string, defaultContent: any) => {
+      if (fs.existsSync(filePath)) return;
+      const filename = path.basename(filePath);
+      const templatePath = path.join(DATA_DIR, 'templates', filename);
+      if (fs.existsSync(templatePath)) {
+        try {
+          fs.copyFileSync(templatePath, filePath);
+          return;
+        } catch (e) {}
+      }
+      writeJsonAtomic(filePath, defaultContent);
+    };
+    
+    copyTemplateOrWriteDefault(TX_FILE, INITIAL_TRANSACTIONS);
+    copyTemplateOrWriteDefault(RECEIPTS_FILE, INITIAL_RECEIPTS);
+    copyTemplateOrWriteDefault(FINDINGS_FILE, []);
+    copyTemplateOrWriteDefault(COMMAND_LOGS_FILE, []);
+    copyTemplateOrWriteDefault(DRIFTS_FILE, []);
+    copyTemplateOrWriteDefault(BUDGET_EXTENSIONS_FILE, []);
+    
+    const systemConfigFile = path.join(DATA_DIR, 'system-config.json');
+    copyTemplateOrWriteDefault(systemConfigFile, { circuitBreakerActive: false, agentTokenBudget: 1000.0 });
 
-    if (!fs.existsSync(DRIFTS_FILE)) {
-      writeJsonAtomic(DRIFTS_FILE, []);
-    }
+    const testKeysFile = path.join(DATA_DIR, 'test-keys.json');
+    copyTemplateOrWriteDefault(testKeysFile, {});
 
-    if (!fs.existsSync(BUDGET_EXTENSIONS_FILE)) {
-      writeJsonAtomic(BUDGET_EXTENSIONS_FILE, []);
-    }
+    const pendingActionsFile = path.join(DATA_DIR, 'pending-actions.json');
+    copyTemplateOrWriteDefault(pendingActionsFile, []);
   }
 
   // ==========================================
@@ -268,9 +339,10 @@ export class FidusGateDatabase {
       }
     }
     
-    const list = this.getTransactionsJson();
-    list.unshift(tx);
-    writeJsonAtomic(TX_FILE, list);
+    lockAndModify(TX_FILE, (list: Transaction[]) => {
+      list.unshift(tx);
+      return list;
+    });
   }
 
   // ==========================================
@@ -301,7 +373,12 @@ export class FidusGateDatabase {
             issued_at: r.issued_at.toISOString(),
             issuer_id: r.issuer_id,
             reason: r.reason || undefined,
-            claimed_issuer_tier: r.claimed_issuer_tier || undefined
+            claimed_issuer_tier: r.claimed_issuer_tier || undefined,
+            actualTokensInput: r.actualTokensInput ?? undefined,
+            actualTokensOutput: r.actualTokensOutput ?? undefined,
+            actualTokensCached: r.actualTokensCached ?? undefined,
+            subagentId: r.subagentId ?? undefined,
+            subagentMaxBudget: r.subagentMaxBudget ?? undefined
           },
           signature: {
             alg: r.signature_alg as any,
@@ -319,39 +396,21 @@ export class FidusGateDatabase {
   }
 
   public async addAuditReceipt(receipt: AuditReceipt): Promise<void> {
-    let previousHash = '';
     if (this.usePostgres && this.prisma) {
       try {
+        let previousHash = '';
         const lastReceipt = await this.prisma.auditReceipt.findFirst({
           orderBy: { issued_at: 'desc' }
         });
         if (lastReceipt) {
           previousHash = lastReceipt.receiptHash || '';
         }
-      } catch (err) {
-        // Ignore and default to empty
-      }
-    } else {
-      const list = this.getAuditReceiptsJson();
-      if (list.length > 0) {
-        const lastReceipt = list[0];
-        previousHash = (lastReceipt as any).receiptHash || '';
-      }
-    }
+        const hash = calculateReceiptHash({
+          payload: receipt.payload,
+          signature: receipt.signature,
+          previousReceiptHash: previousHash
+        });
 
-    const receiptToStore = {
-      ...receipt,
-      previousReceiptHash: previousHash
-    };
-    const hash = calculateReceiptHash({
-      payload: receipt.payload,
-      signature: receipt.signature,
-      previousReceiptHash: previousHash
-    });
-    (receiptToStore as any).receiptHash = hash;
-
-    if (this.usePostgres && this.prisma) {
-      try {
         await this.prisma.auditReceipt.create({
           data: {
             id: `rc_${Math.floor(100000 + Math.random() * 900000)}`,
@@ -366,7 +425,12 @@ export class FidusGateDatabase {
             signature_alg: receipt.signature.alg,
             signature_sig: receipt.signature.sig,
             receiptHash: hash,
-            previousReceiptHash: previousHash
+            previousReceiptHash: previousHash,
+            actualTokensInput: receipt.payload.actualTokensInput || null,
+            actualTokensOutput: receipt.payload.actualTokensOutput || null,
+            actualTokensCached: receipt.payload.actualTokensCached || null,
+            subagentId: receipt.payload.subagentId || null,
+            subagentMaxBudget: receipt.payload.subagentMaxBudget || null
           }
         });
         return;
@@ -375,9 +439,24 @@ export class FidusGateDatabase {
       }
     }
     
-    const list = this.getAuditReceiptsJson();
-    list.unshift(receiptToStore);
-    writeJsonAtomic(RECEIPTS_FILE, list);
+    lockAndModify(RECEIPTS_FILE, (list: AuditReceipt[]) => {
+      let previousHash = '';
+      if (list.length > 0) {
+        previousHash = (list[0] as any).receiptHash || '';
+      }
+      const receiptToStore = {
+        ...receipt,
+        previousReceiptHash: previousHash
+      };
+      const hash = calculateReceiptHash({
+        payload: receipt.payload,
+        signature: receipt.signature,
+        previousReceiptHash: previousHash
+      });
+      (receiptToStore as any).receiptHash = hash;
+      list.unshift(receiptToStore);
+      return list;
+    });
   }
 
   // ==========================================
@@ -444,7 +523,7 @@ export class FidusGateDatabase {
     }
     
     this.ensureInitialized();
-    writeJsonAtomic(FINDINGS_FILE, findings);
+    lockAndModify(FINDINGS_FILE, () => findings);
   }
 
   public async addFinding(finding: SecurityFinding): Promise<void> {
@@ -470,9 +549,10 @@ export class FidusGateDatabase {
       }
     }
     
-    const list = this.getFindingsJson();
-    list.push(finding);
-    writeJsonAtomic(FINDINGS_FILE, list);
+    lockAndModify(FINDINGS_FILE, (list: SecurityFinding[]) => {
+      list.push(finding);
+      return list;
+    });
   }
 
   // ==========================================
@@ -532,9 +612,10 @@ export class FidusGateDatabase {
       }
     }
 
-    const list = this.getCommandLogsJson();
-    list.unshift(logEntry);
-    writeJsonAtomic(COMMAND_LOGS_FILE, list);
+    lockAndModify(COMMAND_LOGS_FILE, (list: CommandLogEntry[]) => {
+      list.unshift(logEntry);
+      return list;
+    });
   }
 
   // ==========================================
@@ -606,10 +687,20 @@ export class FidusGateDatabase {
       }
     }
 
-    const list = this.getDriftsJson();
-    list.unshift(newEntry);
-    writeJsonAtomic(DRIFTS_FILE, list);
-    return newEntry;
+    let returnedEntry: FilesystemDriftEntry | null = null;
+    lockAndModify(DRIFTS_FILE, (list: FilesystemDriftEntry[]) => {
+      returnedEntry = {
+        id: `drift_${Math.floor(100000 + Math.random() * 900000)}`,
+        timestamp: new Date().toISOString(),
+        filePath: drift.filePath,
+        changeType: drift.changeType,
+        diff: drift.diff || null,
+        reconciled: false
+      };
+      list.unshift(returnedEntry);
+      return list;
+    });
+    return returnedEntry!;
   }
 
   public async reconcileDrifts(): Promise<void> {
@@ -625,9 +716,9 @@ export class FidusGateDatabase {
       }
     }
 
-    const list = this.getDriftsJson();
-    const updated = list.map(d => ({ ...d, reconciled: true }));
-    writeJsonAtomic(DRIFTS_FILE, updated);
+    lockAndModify(DRIFTS_FILE, (list: FilesystemDriftEntry[]) => {
+      return list.map(d => ({ ...d, reconciled: true }));
+    });
   }
 
   // ==========================================
@@ -692,13 +783,13 @@ export class FidusGateDatabase {
       }
     }
 
-    const current = this.getSystemConfigJson();
-    const updated = {
-      circuitBreakerActive: config.circuitBreakerActive !== undefined ? config.circuitBreakerActive : current.circuitBreakerActive,
-      agentTokenBudget: config.agentTokenBudget !== undefined ? config.agentTokenBudget : current.agentTokenBudget
-    };
     const CONFIG_FILE = path.join(DATA_DIR, 'system-config.json');
-    writeJsonAtomic(CONFIG_FILE, updated);
+    lockAndModify(CONFIG_FILE, (current: any) => {
+      return {
+        circuitBreakerActive: config.circuitBreakerActive !== undefined ? config.circuitBreakerActive : current.circuitBreakerActive,
+        agentTokenBudget: config.agentTokenBudget !== undefined ? config.agentTokenBudget : current.agentTokenBudget
+      };
+    }, { circuitBreakerActive: false, agentTokenBudget: 1000.0 });
   }
 
   // ==========================================
@@ -781,10 +872,11 @@ export class FidusGateDatabase {
       }
     }
 
-    const list = this.getPendingActionsJson();
-    list.unshift(newEntry);
     const ACTIONS_FILE = path.join(DATA_DIR, 'pending-actions.json');
-    writeJsonAtomic(ACTIONS_FILE, list);
+    lockAndModify(ACTIONS_FILE, (list: any[]) => {
+      list.unshift(newEntry);
+      return list;
+    });
     return newEntry;
   }
 
@@ -836,28 +928,30 @@ export class FidusGateDatabase {
       }
     }
 
-    const list = this.getPendingActionsJson();
-    const action = list.find(a => a.id === approval.actionId);
-    if (action) {
-      // Prevent duplicate approval roles
-      if (!action.approvals.some((app: any) => app.role === approval.role)) {
-        action.approvals.push({
-          id: newApproval.id,
-          actionId: newApproval.actionId,
-          timestamp: newApproval.timestamp,
-          approver: newApproval.approver,
-          role: newApproval.role,
-          signature: newApproval.signature
-        });
-        if (action.approvals.length >= action.requiredVotes && action.status === 'pending') {
-          action.status = 'approved';
+    const ACTIONS_FILE = path.join(DATA_DIR, 'pending-actions.json');
+    let returnedAction: any = null;
+    lockAndModify(ACTIONS_FILE, (list: any[]) => {
+      const action = list.find(a => a.id === approval.actionId);
+      if (action) {
+        // Prevent duplicate approval roles
+        if (!action.approvals.some((app: any) => app.role === approval.role)) {
+          action.approvals.push({
+            id: newApproval.id,
+            actionId: newApproval.actionId,
+            timestamp: newApproval.timestamp,
+            approver: newApproval.approver,
+            role: newApproval.role,
+            signature: newApproval.signature
+          });
+          if (action.approvals.length >= action.requiredVotes && action.status === 'pending') {
+            action.status = 'approved';
+          }
         }
-        const ACTIONS_FILE = path.join(DATA_DIR, 'pending-actions.json');
-        writeJsonAtomic(ACTIONS_FILE, list);
+        returnedAction = action;
       }
-      return action;
-    }
-    return null;
+      return list;
+    });
+    return returnedAction;
   }
 
   public async expirePendingAction(actionId: string): Promise<any> {
@@ -874,15 +968,17 @@ export class FidusGateDatabase {
       }
     }
 
-    const list = this.getPendingActionsJson();
-    const action = list.find(a => a.id === actionId);
-    if (action) {
-      action.status = 'expired';
-      const ACTIONS_FILE = path.join(DATA_DIR, 'pending-actions.json');
-      writeJsonAtomic(ACTIONS_FILE, list);
-      return action;
-    }
-    return null;
+    const ACTIONS_FILE = path.join(DATA_DIR, 'pending-actions.json');
+    let returnedAction: any = null;
+    lockAndModify(ACTIONS_FILE, (list: any[]) => {
+      const action = list.find(a => a.id === actionId);
+      if (action) {
+        action.status = 'expired';
+        returnedAction = action;
+      }
+      return list;
+    });
+    return returnedAction;
   }
 
   public async adminOverrideAction(actionId: string): Promise<any> {
@@ -899,15 +995,17 @@ export class FidusGateDatabase {
       }
     }
 
-    const list = this.getPendingActionsJson();
-    const action = list.find(a => a.id === actionId);
-    if (action) {
-      action.adminOverridden = true;
-      const ACTIONS_FILE = path.join(DATA_DIR, 'pending-actions.json');
-      writeJsonAtomic(ACTIONS_FILE, list);
-      return action;
-    }
-    return null;
+    const ACTIONS_FILE = path.join(DATA_DIR, 'pending-actions.json');
+    let returnedAction: any = null;
+    lockAndModify(ACTIONS_FILE, (list: any[]) => {
+      const action = list.find(a => a.id === actionId);
+      if (action) {
+        action.adminOverridden = true;
+        returnedAction = action;
+      }
+      return list;
+    });
+    return returnedAction;
   }
 
   public async completeAction(actionId: string): Promise<any> {
@@ -924,15 +1022,17 @@ export class FidusGateDatabase {
       }
     }
 
-    const list = this.getPendingActionsJson();
-    const action = list.find(a => a.id === actionId);
-    if (action) {
-      action.status = 'completed';
-      const ACTIONS_FILE = path.join(DATA_DIR, 'pending-actions.json');
-      writeJsonAtomic(ACTIONS_FILE, list);
-      return action;
-    }
-    return null;
+    const ACTIONS_FILE = path.join(DATA_DIR, 'pending-actions.json');
+    let returnedAction: any = null;
+    lockAndModify(ACTIONS_FILE, (list: any[]) => {
+      const action = list.find(a => a.id === actionId);
+      if (action) {
+        action.status = 'completed';
+        returnedAction = action;
+      }
+      return list;
+    });
+    return returnedAction;
   }
 
   private getBudgetExtensionsJson(): BudgetExtensionRequest[] {
@@ -1012,9 +1112,10 @@ export class FidusGateDatabase {
       }
     }
 
-    const list = this.getBudgetExtensionsJson();
-    list.push(newEntry);
-    writeJsonAtomic(BUDGET_EXTENSIONS_FILE, list);
+    lockAndModify(BUDGET_EXTENSIONS_FILE, (list: BudgetExtensionRequest[]) => {
+      list.push(newEntry);
+      return list;
+    });
     return newEntry;
   }
 
@@ -1045,16 +1146,18 @@ export class FidusGateDatabase {
       }
     }
 
-    const list = this.getBudgetExtensionsJson();
-    const req = list.find(r => r.id === id);
-    if (req) {
-      req.status = 'approved';
-      req.reviewer = reviewer;
-      req.reviewedAt = reviewedAtStr;
-      writeJsonAtomic(BUDGET_EXTENSIONS_FILE, list);
-      return req;
-    }
-    return null;
+    let returnedReq: BudgetExtensionRequest | null = null;
+    lockAndModify(BUDGET_EXTENSIONS_FILE, (list: BudgetExtensionRequest[]) => {
+      const req = list.find(r => r.id === id);
+      if (req) {
+        req.status = 'approved';
+        req.reviewer = reviewer;
+        req.reviewedAt = reviewedAtStr;
+        returnedReq = req;
+      }
+      return list;
+    });
+    return returnedReq;
   }
 
   public async rejectBudgetExtensionRequest(id: string, reviewer: string): Promise<BudgetExtensionRequest | null> {
@@ -1084,16 +1187,18 @@ export class FidusGateDatabase {
       }
     }
 
-    const list = this.getBudgetExtensionsJson();
-    const req = list.find(r => r.id === id);
-    if (req) {
-      req.status = 'rejected';
-      req.reviewer = reviewer;
-      req.reviewedAt = reviewedAtStr;
-      writeJsonAtomic(BUDGET_EXTENSIONS_FILE, list);
-      return req;
-    }
-    return null;
+    let returnedReq: BudgetExtensionRequest | null = null;
+    lockAndModify(BUDGET_EXTENSIONS_FILE, (list: BudgetExtensionRequest[]) => {
+      const req = list.find(r => r.id === id);
+      if (req) {
+        req.status = 'rejected';
+        req.reviewer = reviewer;
+        req.reviewedAt = reviewedAtStr;
+        returnedReq = req;
+      }
+      return list;
+    });
+    return returnedReq;
   }
 
   public async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; latencyMs: number; error?: string }> {

@@ -19,6 +19,11 @@ export interface AuditReceiptPayload {
   reason?: string;
   claimed_issuer_tier?: number;
   args?: Record<string, any>;
+  actualTokensInput?: number;
+  actualTokensOutput?: number;
+  actualTokensCached?: number;
+  subagentId?: string;
+  subagentMaxBudget?: number;
 }
 
 export interface AttestationCertificate {

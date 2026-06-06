@@ -8,7 +8,11 @@ export type ASTNode =
   | { type: 'IN'; path: string; values: string[] }
   | { type: 'LIKE'; path: string; pattern: string }
   | { type: 'CONTAINS'; path: string; substring: string }
-  | { type: 'EQUALS'; path: string; value: string }
+  | { type: 'EQUALS'; path: string; value: any }
+  | { type: 'GREATER_THAN'; path: string; value: number }
+  | { type: 'LESS_THAN'; path: string; value: number }
+  | { type: 'GREATER_THAN_OR_EQUAL'; path: string; value: number }
+  | { type: 'LESS_THAN_OR_EQUAL'; path: string; value: number }
   | { type: 'BOOLEAN'; path: string };
 
 export interface ParsedRule {
@@ -83,6 +87,24 @@ export class CedarEvaluator {
       } else if (expr.startsWith('||', i)) {
         tokens.push('||');
         i += 2;
+      } else if (expr.startsWith('==', i)) {
+        tokens.push('==');
+        i += 2;
+      } else if (expr.startsWith('>=', i)) {
+        tokens.push('>=');
+        i += 2;
+      } else if (expr.startsWith('<=', i)) {
+        tokens.push('<=');
+        i += 2;
+      } else if (char === '=') {
+        tokens.push('=');
+        i++;
+      } else if (char === '>') {
+        tokens.push('>');
+        i++;
+      } else if (char === '<') {
+        tokens.push('<');
+        i++;
       } else if (char === '!') {
         tokens.push('!');
         i++;
@@ -116,7 +138,7 @@ export class CedarEvaluator {
       } else {
         // Words, identifiers, properties, paths or operators
         let start = i;
-        while (i < expr.length && !' \t\n\r&|!()[]"'.includes(expr[i])) {
+        while (i < expr.length && !' \t\n\r&|!()[]"><='.includes(expr[i])) {
           i++;
         }
         tokens.push(expr.substring(start, i));
@@ -194,6 +216,26 @@ export class CedarEvaluator {
         const valToken = consume();
         const value = JSON.parse(valToken);
         return { type: 'EQUALS', path, value };
+      } else if (next === '>') {
+        consume('>');
+        const valToken = consume();
+        const value = JSON.parse(valToken);
+        return { type: 'GREATER_THAN', path, value };
+      } else if (next === '<') {
+        consume('<');
+        const valToken = consume();
+        const value = JSON.parse(valToken);
+        return { type: 'LESS_THAN', path, value };
+      } else if (next === '>=') {
+        consume('>=');
+        const valToken = consume();
+        const value = JSON.parse(valToken);
+        return { type: 'GREATER_THAN_OR_EQUAL', path, value };
+      } else if (next === '<=') {
+        consume('<=');
+        const valToken = consume();
+        const value = JSON.parse(valToken);
+        return { type: 'LESS_THAN_OR_EQUAL', path, value };
       } else if (next === 'like') {
         consume('like');
         const patternToken = consume();
@@ -242,6 +284,10 @@ export class CedarEvaluator {
       const i = contextObj.ibp;
       if (typeof i.cross_functional_synthesized !== 'boolean' && i.cross_functional_synthesized !== undefined) return false;
       if (typeof i.budget_aligned !== 'boolean' && i.budget_aligned !== undefined) return false;
+      if (typeof i.budget_exhaustion_percentage !== 'number' && i.budget_exhaustion_percentage !== undefined) return false;
+      if (typeof i.subagent_budget_aligned !== 'boolean' && i.subagent_budget_aligned !== undefined) return false;
+      if (typeof i.subagent_budget_exhaustion_percentage !== 'number' && i.subagent_budget_exhaustion_percentage !== undefined) return false;
+      if (typeof i.subagent_id !== 'string' && i.subagent_id !== undefined) return false;
     }
 
     // 3. Verify PLM types
@@ -293,7 +339,9 @@ export class CedarEvaluator {
           }
         }
       } catch (err) {
-        // Fall through, skip failed evaluations
+        // Fix 6: Surface evaluation failures as warnings so policy authors can debug broken conditions.
+        // Behavior is unchanged (fails closed — the rule is skipped, effectively a deny).
+        console.warn(`[CedarEvaluator] Rule evaluation failed (rule skipped, fails closed):`, err);
       }
     }
 
@@ -341,6 +389,22 @@ export class CedarEvaluator {
       case 'EQUALS': {
         const val = getPathValue(context, node.path);
         return val === node.value;
+      }
+      case 'GREATER_THAN': {
+        const val = getPathValue(context, node.path);
+        return typeof val === 'number' && val > node.value;
+      }
+      case 'LESS_THAN': {
+        const val = getPathValue(context, node.path);
+        return typeof val === 'number' && val < node.value;
+      }
+      case 'GREATER_THAN_OR_EQUAL': {
+        const val = getPathValue(context, node.path);
+        return typeof val === 'number' && val >= node.value;
+      }
+      case 'LESS_THAN_OR_EQUAL': {
+        const val = getPathValue(context, node.path);
+        return typeof val === 'number' && val <= node.value;
       }
       case 'LIKE': {
         const val = getPathValue(context, node.path);
@@ -407,7 +471,10 @@ export class CedarEvaluator {
             triggeredPermits.push(ruleLabel);
           }
         }
-      } catch (err) {}
+      } catch (err) {
+        // Fix 6: Surface evaluation failures as warnings so policy authors can debug broken conditions.
+        console.warn(`[CedarEvaluator][Simulator] Rule #${idx + 1} evaluation failed (rule skipped, fails closed):`, err);
+      }
     }
 
     const hasForbid = triggeredForbids.length > 0;

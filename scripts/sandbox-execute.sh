@@ -19,6 +19,7 @@ fi
 
 COMMAND="$1"
 MOUNT_DIR="$2"
+SUBAGENT_ID="$3"
 
 if [ -z "$COMMAND" ] || [ -z "$MOUNT_DIR" ]; then
     echo "❌ Error: Missing parameters!"
@@ -84,7 +85,12 @@ else
 fi
 
 # Proactively ensure the memory folder exists on the host
-mkdir -p "$MOUNT_DIR/.memory"
+if [ -n "$SUBAGENT_ID" ]; then
+    WORKSPACE_MEMORY_DIR="$MOUNT_DIR/.memory/subagents/$SUBAGENT_ID"
+else
+    WORKSPACE_MEMORY_DIR="$MOUNT_DIR/.memory"
+fi
+mkdir -p "$WORKSPACE_MEMORY_DIR"
 
 # Parse resource constraints from environment or default safely
 CPU_LIMIT=${SANDBOX_CPU_LIMIT:-"1"}
@@ -94,10 +100,10 @@ TIMEOUT_LIMIT=${SANDBOX_TIMEOUT:-"300"}
 echo "🔒 Enforcing resource limits: CPU=$CPU_LIMIT, RAM=$MEM_LIMIT, Hard-Timeout=${TIMEOUT_LIMIT}s"
 
 # Clear any previous pending patches
-rm -f "$MOUNT_DIR/.memory/pending-sandbox.patch"
+rm -f "$WORKSPACE_MEMORY_DIR/pending-sandbox.patch"
 
 # Run compilation/tests inside isolated container
-# Mounts primary workspace read-only, mounts .memory read-write
+# Mounts primary workspace read-only, mounts workspace-memory read-write
 USER_FLAG=""
 if [ -n "$RUN_USER" ]; then
     USER_FLAG="--user $RUN_USER"
@@ -108,7 +114,7 @@ timeout "$TIMEOUT_LIMIT" docker run --name "$CONTAINER_NAME" \
   --cpus="$CPU_LIMIT" \
   --memory="$MEM_LIMIT" \
   -v "$MOUNT_DIR:/workspace:ro" \
-  -v "$MOUNT_DIR/.memory:/workspace-memory:rw" \
+  -v "$WORKSPACE_MEMORY_DIR:/workspace-memory:rw" \
   --network none \
   --cap-drop=ALL \
   $USER_FLAG \
@@ -150,14 +156,14 @@ fi
 
 # Check if sandbox succeeded and copy patch to output
 if [ $EXIT_CODE -eq 0 ]; then
-    if [ -s "$MOUNT_DIR/.memory/pending-sandbox.patch" ]; then
-        echo "💾 Saved diff patch to: $MOUNT_DIR/.memory/pending-sandbox.patch"
+    if [ -s "$WORKSPACE_MEMORY_DIR/pending-sandbox.patch" ]; then
+        echo "💾 Saved diff patch to: $WORKSPACE_MEMORY_DIR/pending-sandbox.patch"
         # Also copy to temp directory for apply-patch.sh compatibility
-        cp "$MOUNT_DIR/.memory/pending-sandbox.patch" "$TEMP_PATCH"
+        cp "$WORKSPACE_MEMORY_DIR/pending-sandbox.patch" "$TEMP_PATCH"
         echo "💾 Copied diff patch to: $TEMP_PATCH"
     else
         echo "ℹ️  No file modifications detected."
-        rm -f "$MOUNT_DIR/.memory/pending-sandbox.patch"
+        rm -f "$WORKSPACE_MEMORY_DIR/pending-sandbox.patch"
     fi
 else
     echo "❌ Sandbox execution failed with exit code $EXIT_CODE. Workspace changes discarded."

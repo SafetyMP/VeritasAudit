@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import { routeModel } from './model-router';
 import jwt from 'jsonwebtoken';
 import { execSync } from 'node:child_process';
 import * as path from 'node:path';
@@ -251,6 +252,10 @@ app.use(async (req, res, next) => {
   next();
 });
 
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  log('error', '❌ FATAL: JWT_SECRET environment variable is required in production mode!');
+  process.exit(1);
+}
 const JWT_SECRET = process.env.JWT_SECRET || 'fidusgate-super-secure-dev-jwt-secret';
 
 // Logger helper with security tagging
@@ -475,6 +480,18 @@ function requireAuth(allowedRoles: ('developer' | 'admin' | 'auditor')[]) {
   };
 }
 
+// Fix 1: X-Agent-Principal middleware
+// Reads the X-Agent-Principal header and attaches it to the request so Cedar evaluations
+// can use the caller's SME role identity. CLAUDE.md instructs agents to set this header;
+// without this middleware the instruction was a no-op.
+app.use((req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  const agentPrincipal = req.headers['x-agent-principal'];
+  if (agentPrincipal && typeof agentPrincipal === 'string') {
+    (req as any).agentPrincipal = agentPrincipal;
+  }
+  next();
+});
+
 // OIDC Simulated JWT Token Signer Endpoint
 app.post('/api/auth/token', (req, res) => {
   try {
@@ -574,10 +591,28 @@ app.post('/api/sessions/sign', requireAuth(['developer', 'admin']), (req, res) =
 async function evaluateCedarPolicy(principal: string, action: string, resource: string, context: any): Promise<'allow' | 'deny'> {
   const daemonUrl = process.env.CEDAR_DAEMON_URL || 'http://localhost:50051/authorize';
   
-  // Record estimated token usage for IBP budget enforcement
-  const payloadSize = JSON.stringify({ principal, action, resource, context }).length;
-  const estimatedTokens = Math.max(300, Math.floor(payloadSize / 4));
-  ibpTracker.recordTokenUsage(estimatedTokens);
+  // Record token usage for IBP budget enforcement
+  // Fix 4: Use actual token counts when provided by the agent (accurate billing).
+  // Subtract cached tokens because they are served from KV cache and don't burn new compute.
+  // Fall back to payload-size estimation only when real counts are unavailable.
+  let tokensToRecord = 0;
+  if (context && (context.actualTokensInput !== undefined || context.actualTokensOutput !== undefined)) {
+    const inputTokens = context.actualTokensInput || 0;
+    const outputTokens = context.actualTokensOutput || 0;
+    const cachedTokens = context.actualTokensCached || 0;
+    // Cached tokens are a subset of input tokens — subtract them to avoid double-charging
+    tokensToRecord = Math.max(0, inputTokens - cachedTokens) + outputTokens;
+  } else {
+    // Fallback to estimation based on payload size
+    const payloadSize = JSON.stringify({ principal, action, resource, context }).length;
+    tokensToRecord = Math.max(300, Math.floor(payloadSize / 4));
+  }
+  
+  if (context && context.subagentId) {
+    ibpTracker.recordSubagentTokenUsage(context.subagentId, tokensToRecord, context.subagentMaxBudget);
+  } else {
+    ibpTracker.recordTokenUsage(tokensToRecord);
+  }
 
   // If executing commit or release, update the publish/release metrics statefully
   const cmd = context?.commandLine || '';
@@ -609,7 +644,13 @@ async function evaluateCedarPolicy(principal: string, action: string, resource: 
     },
     ibp: {
       cross_functional_synthesized: ibpState.crossFunctionalSynthesized,
-      budget_aligned: isBudgetAligned
+      budget_aligned: isBudgetAligned,
+      budget_exhaustion_percentage: ibpTracker.getBudgetExhaustionPercentage(),
+      ...(context && context.subagentId ? {
+        subagent_budget_aligned: ibpTracker.isSubagentBudgetAligned(context.subagentId),
+        subagent_budget_exhaustion_percentage: ibpTracker.getSubagentBudgetExhaustionPercentage(context.subagentId),
+        subagent_id: context.subagentId
+      } : {})
     },
     plm: {
       active_requirement_id: plmState.activeRequirementId,
@@ -751,8 +792,34 @@ const PUBLIC_KEY_MAP: Record<string, string> = {
   'sb:issuer:devops-sme': '302a300506032b6570032100cf20721389de78a2e10fc39c8942b0d07412ae89fd2b13c7809aef823101de87'
 };
 
-// Dynamically generate the Master Root Keypair for attestation at startup
-const MASTER_ROOT_KEYS = generateKeyPair();
+// Retrieve Master Root Keypair for attestation from environment if available, or fall back to dev generation
+let MASTER_ROOT_KEYS: { publicKeyHex: string; privateKeyHex: string };
+if (process.env.MASTER_PRIVATE_KEY_HEX && process.env.MASTER_PUBLIC_KEY_HEX) {
+  MASTER_ROOT_KEYS = {
+    privateKeyHex: process.env.MASTER_PRIVATE_KEY_HEX,
+    publicKeyHex: process.env.MASTER_PUBLIC_KEY_HEX
+  };
+  log('info', '🔑 Loaded stable Master Root Keypair from environment variables.');
+} else {
+  // Check if we have a cached dev keypair in packages/database/data/test-keys.json to avoid breaking signatures across restarts
+  const devKeysPath = path.resolve(process.cwd(), 'packages/database/data/test-keys.json');
+  let cachedKeys: any = null;
+  if (fs.existsSync(devKeysPath)) {
+    try {
+      cachedKeys = JSON.parse(fs.readFileSync(devKeysPath, 'utf8'));
+    } catch (e) {}
+  }
+  if (cachedKeys && cachedKeys.privateKeyHex && cachedKeys.publicKeyHex) {
+    MASTER_ROOT_KEYS = cachedKeys;
+    log('info', '🔑 Loaded cached dev Master Root Keypair from packages/database/data/test-keys.json.');
+  } else {
+    MASTER_ROOT_KEYS = generateKeyPair();
+    log('warn', '⚠️  Generating ephemeral Master Root Keypair. Signatures will NOT be valid across server restarts! Define MASTER_PRIVATE_KEY_HEX to persist.');
+    try {
+      fs.writeFileSync(devKeysPath, JSON.stringify(MASTER_ROOT_KEYS, null, 2), 'utf8');
+    } catch (e) {}
+  }
+}
 PUBLIC_KEY_MAP['sb:issuer:de073ae64e43'] = MASTER_ROOT_KEYS.publicKeyHex;
 
 // ==========================================
@@ -830,7 +897,12 @@ app.post('/api/receipts', requireAuth(['developer', 'admin']), async (req, res) 
       'file_system', 
       { 
         path: payload.args?.path || (payload.tool_name !== 'execute_command' ? payload.reason : ''),
-        commandLine: payload.args?.commandLine || (payload.tool_name === 'execute_command' ? payload.reason : '')
+        commandLine: payload.args?.commandLine || (payload.tool_name === 'execute_command' ? payload.reason : ''),
+        actualTokensInput: payload.actualTokensInput,
+        actualTokensOutput: payload.actualTokensOutput,
+        actualTokensCached: payload.actualTokensCached,
+        subagentId: payload.subagentId,
+        subagentMaxBudget: payload.subagentMaxBudget
       }
     );
     
@@ -855,6 +927,15 @@ app.post('/api/receipts', requireAuth(['developer', 'admin']), async (req, res) 
         devopsTracker.onFileModified();
         ibpTracker.logTask('specialized', payload.tool_name);
         plmTracker.onFileModified(payload.args?.path || '');
+        // Fix 2: Reset IBP synthesis gate on actual source file modifications.
+        // Done here (not in logTask) to avoid the noise loop: logTask fired on every write,
+        // which reset synthesis even for files that don't affect cross-functional concerns.
+        const modifiedPath: string = payload.args?.path || '';
+        const isTestOrConfig = modifiedPath.includes('.test.') || modifiedPath.includes('.spec.')
+          || modifiedPath.endsWith('package.json') || modifiedPath.endsWith('CHANGELOG.md');
+        if (!isTestOrConfig && (modifiedPath.startsWith('apps/') || modifiedPath.startsWith('packages/'))) {
+          ibpTracker.invalidateSynthesis();
+        }
         log('info', `DevOps compliance gate invalidated: file modification detected by tool '${payload.tool_name}'.`);
       } else if (payload.tool_name === 'execute_command') {
         const cmd = payload.args?.commandLine || payload.reason || '';
@@ -981,7 +1062,7 @@ function requiresConsensus(command: string, role: string): boolean {
 // ==========================================
 app.post('/api/sandbox/execute', autoThrottleMiddleware, requireAuth(['admin', 'developer']), async (req, res) => {
   try {
-    const { command } = req.body;
+    const { command, subagentId } = req.body;
     if (!command) {
        res.status(400).json({ error: 'Missing required parameters: command' });
        return;
@@ -1183,7 +1264,9 @@ app.post('/api/sandbox/execute', autoThrottleMiddleware, requireAuth(['admin', '
     
     // Execute command within unprivileged sandbox container and stream logs
     const workspacePath = path.resolve(__dirname, '..', '..', '..');
-    const sandboxCmd = `bash scripts/sandbox-execute.sh "${command}" "${workspacePath}"`;
+    const sandboxCmd = subagentId 
+      ? `bash scripts/sandbox-execute.sh "${command}" "${workspacePath}" "${subagentId}"`
+      : `bash scripts/sandbox-execute.sh "${command}" "${workspacePath}"`;
     
     const startExec = Date.now();
     activeSandboxContainers++;
@@ -1242,7 +1325,7 @@ app.post('/api/sandbox/execute', autoThrottleMiddleware, requireAuth(['admin', '
 // 8. POST /api/authorize - Real-time pre-execution tool validation (Role: developer, admin)
 app.post('/api/authorize', requireAuth(['developer', 'admin']), async (req, res) => {
   try {
-    const { principal, tool_name, args } = req.body;
+    const { principal, tool_name, args, actualTokensInput, actualTokensOutput, actualTokensCached, subagentId, subagentMaxBudget } = req.body;
     
     if (!principal || !tool_name) {
       res.status(400).json({ error: 'Missing required parameters: principal, tool_name' });
@@ -1256,21 +1339,77 @@ app.post('/api/authorize', requireAuth(['developer', 'admin']), async (req, res)
       'file_system',
       {
         path: args?.path || '',
-        commandLine: args?.commandLine || ''
+        commandLine: args?.commandLine || '',
+        actualTokensInput,
+        actualTokensOutput,
+        actualTokensCached,
+        subagentId,
+        subagentMaxBudget
       }
     );
 
+    // Build machine-readable remediation hints for denied requests
+    let blockedGates: string[] = [];
+    let remediation: string[] = [];
+    if (decision === 'deny') {
+      const plmState = plmTracker.getState();
+      const devopsState = devopsTracker.getState();
+      const ibpState = ibpTracker.getState();
+
+      const remediationMap: Record<string, string> = {
+        plm_no_requirement: 'POST /api/plm/requirement with { "id": "REQ-XXX", "description": "..." } to register an active requirement.',
+        plm_no_tests: 'Write or update a *.test.ts or *.spec.ts file alongside your source changes before committing.',
+        plm_api_drift_unverified: 'Run schema/contract tests, then POST /api/plm/drift-verify to clear the API drift gate.',
+        plm_feedback_unaligned: 'POST /api/plm/feedback-align with { "requirementId": "...", "justification": "..." } to acknowledge active feedback.',
+        devops_pipeline_failed: 'Run bash scripts/ci-verify.sh or npm run ci, then the gateway will automatically clear this gate on success.',
+        devops_security_not_audited: 'Run npm run sandbox (agentic-actions-auditor) to complete the security audit gate.',
+        devops_ham_not_checked: 'Run bash scripts/ham-drift-watcher.sh to verify CLAUDE.md context sheets are fresh.',
+        ibp_synthesis_required: 'POST /api/ibp/synthesize with your cross-functional report (min 50 chars) to clear the IBP gate.',
+        ibp_budget_exhausted: 'POST /api/ibp/budget/request-extension with { "requestedAmount": N, "reason": "..." } to request more tokens.',
+      };
+
+      if (!plmState.activeRequirementId) blockedGates.push('plm_no_requirement');
+      if (!plmState.associatedTestsWritten) blockedGates.push('plm_no_tests');
+      if (plmState.hasApiDrift && !plmState.driftVerified) blockedGates.push('plm_api_drift_unverified');
+      if (plmState.activeDirectives.length > 0 && !plmState.feedbackAligned) blockedGates.push('plm_feedback_unaligned');
+      if (!devopsState.pipelineVerified) blockedGates.push('devops_pipeline_failed');
+      if (!devopsState.securityAudited) blockedGates.push('devops_security_not_audited');
+      if (!devopsState.hamChecked) blockedGates.push('devops_ham_not_checked');
+      if (!ibpState.crossFunctionalSynthesized) blockedGates.push('ibp_synthesis_required');
+      if (ibpTracker.getBudgetExhaustionPercentage() > 95) blockedGates.push('ibp_budget_exhausted');
+
+      remediation = blockedGates.map(g => remediationMap[g]).filter(Boolean);
+    }
+
     log('info', `Real-time tool authorization evaluated: ${principal} -> ${tool_name} -> ${decision.toUpperCase()}`);
-    res.json({ decision });
+    res.json({
+      decision,
+      ...(decision === 'deny' && blockedGates.length > 0 && {
+        blocked_gates: blockedGates,
+        remediation
+      })
+    });
   } catch (error: any) {
     log('error', 'Failed to perform real-time tool authorization', error.message);
     res.status(500).json({ error: 'Authorization evaluation failed' });
   }
 });
 
-// ==========================================
-// Stateful IBP Gating Endpoints
-// ==========================================
+// POST /api/orchestration/route-model - Dynamic model routing recommendation (Role: developer, admin)
+app.post('/api/orchestration/route-model', requireAuth(['developer', 'admin']), (req, res) => {
+  try {
+    const { taskDescription, toolName, subagentId, estimatedTokens } = req.body;
+    if (!taskDescription) {
+       res.status(400).json({ error: 'Missing required parameter: taskDescription' });
+       return;
+    }
+    const recommendation = routeModel({ taskDescription, toolName, subagentId, estimatedTokens }, ibpTracker);
+    res.json(recommendation);
+  } catch (error: any) {
+    log('error', 'Failed to route model request', error.message);
+    res.status(500).json({ error: 'Failed to evaluate model routing' });
+  }
+});
 
 // 9. POST /api/ibp/synthesize - Submit IBP Cross-Functional Synthesis Report (Role: developer, admin)
 app.post('/api/ibp/synthesize', requireAuth(['developer', 'admin']), (req, res) => {
@@ -1296,6 +1435,92 @@ app.get('/api/ibp/state', requireAuth(['developer', 'admin', 'auditor']), (req, 
     res.json(ibpTracker.getState());
   } catch (error: any) {
     res.status(500).json({ error: 'Failed to retrieve IBP state' });
+  }
+});
+
+// GET /api/status/agent-readiness - Unified session bootstrap status for AI agents (Role: developer, admin, auditor)
+// Returns all gate states, readiness flags, and computed next-action instructions.
+// Agents MUST call this at session start before performing any write operations.
+app.get('/api/status/agent-readiness', requireAuth(['developer', 'admin', 'auditor']), (req, res) => {
+  try {
+    const plmState = plmTracker.getState();
+    const devopsState = devopsTracker.getState();
+    const ibpState = ibpTracker.getState();
+
+    const plmPassing = !!plmState.activeRequirementId
+      && plmState.associatedTestsWritten
+      && (!plmState.hasApiDrift || plmState.driftVerified)
+      && plmState.feedbackAligned;
+
+    const devopsPassing = devopsState.pipelineVerified
+      && devopsState.securityAudited
+      && devopsState.hamChecked;
+
+    const ibpPassing = ibpState.crossFunctionalSynthesized
+      && ibpTracker.isBudgetAligned();
+
+    const readyToWrite = !!plmState.activeRequirementId;
+    const readyToCommit = plmPassing && devopsPassing && ibpPassing;
+
+    // Compute the highest-priority next action for the agent
+    let nextAction = '✅ All gates passing. You may write code and commit freely.';
+    if (!plmState.activeRequirementId) {
+      nextAction = '🔴 REQUIRED FIRST: POST /api/plm/requirement with { "id": "REQ-XXX", "description": "Your task" } before writing any source files.';
+    } else if (!ibpState.crossFunctionalSynthesized) {
+      nextAction = '🟡 IBP synthesis required before committing. POST /api/ibp/synthesize with your cross-functional report.';
+    } else if (!devopsState.pipelineVerified) {
+      nextAction = '🟡 DevOps pipeline gate open. Run bash scripts/ci-verify.sh to clear it.';
+    } else if (!plmState.associatedTestsWritten) {
+      nextAction = '🟡 Test traceability gate open. Write *.test.ts or *.spec.ts files for your modified source files.';
+    } else if (plmState.hasApiDrift && !plmState.driftVerified) {
+      nextAction = '🟡 API drift detected. Run schema tests then POST /api/plm/drift-verify.';
+    } else if (!plmState.feedbackAligned) {
+      nextAction = '🟡 Active feedback unaligned. POST /api/plm/feedback-align to acknowledge directives.';
+    }
+
+    res.json({
+      ready_to_write: readyToWrite,
+      ready_to_commit: readyToCommit,
+      next_action: nextAction,
+      gates: {
+        plm: {
+          passing: plmPassing,
+          active_requirement_id: plmState.activeRequirementId,
+          associated_tests_written: plmState.associatedTestsWritten,
+          has_api_drift: plmState.hasApiDrift,
+          drift_verified: plmState.driftVerified,
+          feedback_aligned: plmState.feedbackAligned,
+          active_directives_count: plmState.activeDirectives.length,
+          ...((!plmState.activeRequirementId) && {
+            blocking_reason: 'No active requirement registered.',
+            action: 'POST /api/plm/requirement with { "id": "REQ-XXX", "description": "..." }'
+          })
+        },
+        devops: {
+          passing: devopsPassing,
+          pipeline_verified: devopsState.pipelineVerified,
+          security_audited: devopsState.securityAudited,
+          ham_checked: devopsState.hamChecked,
+          last_pipeline_run: devopsState.lastPipelineRun || null,
+          last_security_audit: devopsState.lastSecurityAudit || null,
+          last_ham_check: devopsState.lastHamCheck || null
+        },
+        ibp: {
+          passing: ibpPassing,
+          synthesis_required: !ibpState.crossFunctionalSynthesized,
+          budget_total_tokens: ibpState.tokenBudget,
+          budget_consumed_tokens: ibpState.tokensConsumed,
+          budget_remaining_tokens: Math.max(0, ibpState.tokenBudget - ibpState.tokensConsumed),
+          budget_exhaustion_pct: ibpTracker.getBudgetExhaustionPercentage(),
+          current_sprint_goal: ibpState.currentSprintGoal
+        }
+      },
+      circuit_breaker_active: checkCircuitBreaker(),
+      role_hint: 'Set the X-Agent-Principal header to your SME role (e.g. sb:issuer:backend-sme) on write and execute calls for Tier 8 role-gated enforcement.'
+    });
+  } catch (error: any) {
+    log('error', 'Failed to compute agent readiness status', error.message);
+    res.status(500).json({ error: 'Failed to compute agent readiness status' });
   }
 });
 
@@ -1745,7 +1970,11 @@ app.get('/api/auth/attested-claims', requireAuth(['developer', 'admin', 'auditor
 // 16. GET /api/sandbox/patch - Retrieve pending sandbox overlay patch (Role: developer, admin, auditor)
 app.get('/api/sandbox/patch', requireAuth(['developer', 'admin', 'auditor']), (req, res) => {
   try {
-    const patchPath = path.resolve(process.cwd(), '.memory/pending-sandbox.patch');
+    const { subagentId } = req.query;
+    const patchPath = subagentId
+      ? path.resolve(process.cwd(), `.memory/subagents/${subagentId}/pending-sandbox.patch`)
+      : path.resolve(process.cwd(), '.memory/pending-sandbox.patch');
+
     if (fs.existsSync(patchPath)) {
       const patch = fs.readFileSync(patchPath, 'utf8');
       res.json({ patch, exists: true });
@@ -1760,7 +1989,11 @@ app.get('/api/sandbox/patch', requireAuth(['developer', 'admin', 'auditor']), (r
 // 17. POST /api/sandbox/apply - Apply/Merge sandbox diff patch (Role: admin)
 app.post('/api/sandbox/apply', requireAuth(['admin']), async (req, res) => {
   try {
-    const patchPath = path.resolve(process.cwd(), '.memory/pending-sandbox.patch');
+    const { subagentId } = req.body;
+    const patchPath = subagentId
+      ? path.resolve(process.cwd(), `.memory/subagents/${subagentId}/pending-sandbox.patch`)
+      : path.resolve(process.cwd(), '.memory/pending-sandbox.patch');
+
     if (!fs.existsSync(patchPath)) {
       res.status(404).json({ error: 'No pending sandbox patch found to apply.' });
       return;
@@ -1773,10 +2006,20 @@ app.post('/api/sandbox/apply', requireAuth(['admin']), async (req, res) => {
     
     try {
       // Use git apply to merge patch cleanly
-      execSync('git apply --whitespace=nowarn .memory/pending-sandbox.patch', { cwd: process.cwd() });
+      execSync(`git apply --whitespace=nowarn "${patchPath}"`, { cwd: process.cwd() });
       
       // Delete patch file after successful merge
       fs.unlinkSync(patchPath);
+
+      // Clean up subagent directory if empty
+      if (subagentId) {
+        const subDir = path.dirname(patchPath);
+        if (fs.existsSync(subDir)) {
+          try {
+            fs.rmdirSync(subDir);
+          } catch (e) {}
+        }
+      }
 
       log('info', `Sandbox patch successfully merged into host codebase by ${userEmail}.`);
 
@@ -1784,7 +2027,7 @@ app.post('/api/sandbox/apply', requireAuth(['admin']), async (req, res) => {
       await db.addCommandLog({
         id: `cmd_${Math.floor(100000 + Math.random() * 900000)}`,
         timestamp: new Date().toISOString(),
-        command: 'git apply .memory/pending-sandbox.patch',
+        command: `git apply ${subagentId ? `.memory/subagents/${subagentId}/pending-sandbox.patch` : '.memory/pending-sandbox.patch'}`,
         user: userEmail,
         role: userRole,
         status: 'success',
@@ -2705,6 +2948,30 @@ const metricsServer = http.createServer(async (req, res) => {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not Found');
   }
+});
+
+// Fix 5: GET /health — unauthenticated liveness/readiness probe for Docker and k8s.
+// Returns gate states and circuit breaker status so orchestrators can assess health.
+app.get('/health', (_req: express.Request, res: express.Response) => {
+  const circuitBreakerActive = checkCircuitBreaker();
+  const plmState = plmTracker.getState();
+  const ibpState = ibpTracker.getState();
+  const devopsState = devopsTracker.getState();
+  const allGatesPassing =
+    !!plmState.activeRequirementId &&
+    plmState.associatedTestsWritten &&
+    devopsState.pipelineVerified &&
+    ibpState.crossFunctionalSynthesized &&
+    ibpTracker.isBudgetAligned();
+
+  res.status(circuitBreakerActive ? 503 : 200).json({
+    status: circuitBreakerActive ? 'degraded' : 'ok',
+    version: '1.2.0-Enterprise',
+    uptime_seconds: Math.floor(process.uptime()),
+    circuit_breaker_active: circuitBreakerActive,
+    gates_passing: allGatesPassing,
+    timestamp: new Date().toISOString()
+  });
 });
 
 if (process.argv.includes('--mcp')) {

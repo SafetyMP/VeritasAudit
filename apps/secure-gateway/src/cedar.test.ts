@@ -27,7 +27,8 @@ test('FidusGate Cedar Policy & Command Auditor Integration Tests', async (t) => 
     },
     ibp: {
       cross_functional_synthesized: true,
-      budget_aligned: true
+      budget_aligned: true,
+      budget_exhaustion_percentage: 20
     },
     plm: {
       active_requirement_id: 'REQ-101',
@@ -306,7 +307,8 @@ test('FidusGate Cedar Policy & Command Auditor Integration Tests', async (t) => 
       },
       ibp: {
         cross_functional_synthesized: true,
-        budget_aligned: false
+        budget_aligned: false,
+        budget_exhaustion_percentage: 98
       }
     };
 
@@ -325,7 +327,8 @@ test('FidusGate Cedar Policy & Command Auditor Integration Tests', async (t) => 
       },
       ibp: {
         cross_functional_synthesized: true,
-        budget_aligned: true
+        budget_aligned: true,
+        budget_exhaustion_percentage: 20
       },
       plm: {
         active_requirement_id: 'REQ-101',
@@ -341,6 +344,34 @@ test('FidusGate Cedar Policy & Command Auditor Integration Tests', async (t) => 
       evaluator.isAuthorized(principal, 'execute_command', { commandLine: 'bash scripts/sandbox-execute.sh "git commit -m \\"feat: add user schema\\"" "."' }, ibpCompliantContext),
       'allow',
       'Should authorize committing code once all DevOps and IBP compliance checks pass successfully'
+    );
+
+    // 4. Blocked when IBP token budget is at 96% (progressive limit exceeded)
+    const progressiveLimitContext = {
+      devops: {
+        pipeline_passed: true,
+        security_audited: true,
+        ham_drift_checked: true
+      },
+      ibp: {
+        cross_functional_synthesized: true,
+        budget_aligned: true,
+        budget_exhaustion_percentage: 96
+      },
+      plm: {
+        active_requirement_id: 'REQ-101',
+        associated_tests_written: true,
+        has_api_drift: false,
+        drift_verified: true,
+        release_version_updated: true,
+        changelog_updated: true
+      }
+    };
+
+    assert.strictEqual(
+      evaluator.isAuthorized(principal, 'execute_command', { commandLine: 'bash scripts/sandbox-execute.sh "git commit -m \\"feat: add user schema\\"" "."' }, progressiveLimitContext),
+      'deny',
+      'Should forbid executing sandbox operations if IBP token consumption percentage exceeds 95%'
     );
   });
 

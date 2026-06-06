@@ -131,5 +131,10 @@ out/
 .memory/
 apps/secure-gateway/.memory/
 
+# FidusGate local JSON database files
+packages/database/data/*.json
+!packages/database/data/templates/
+!packages/database/data/templates/*.json
+
 # End of .gitignore
 

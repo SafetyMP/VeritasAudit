@@ -26,7 +26,11 @@ action "call_tool" appliesTo {
         },
         ibp: {
             cross_functional_synthesized: Bool,
-            budget_aligned: Bool
+            budget_aligned: Bool,
+            budget_exhaustion_percentage: Long,
+            subagent_budget_aligned?: Bool,
+            subagent_budget_exhaustion_percentage?: Long,
+            subagent_id?: String
         },
         plm: {
             active_requirement_id: String,

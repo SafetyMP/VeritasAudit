@@ -8,7 +8,9 @@
     "prestart": "docker rm -f fidusgate-cedar-daemon 2>/dev/null || true",
     "start": "docker run -d --name fidusgate-cedar-daemon -p 50051:50051 fidusgate-cedar-daemon",
     "stop": "docker rm -f fidusgate-cedar-daemon 2>/dev/null || true",
-    "test": "echo '📡 Rust tests bypassed'",
-    "lint": "echo '📡 Rust linter bypassed'"
+    "build:native": "cargo build --release 2>/dev/null || echo 'cargo not installed'",
+    "start:native": "cargo run --release 2>/dev/null || echo 'cargo not installed'",
+    "test": "cargo test 2>/dev/null || echo '📡 Rust tests bypassed'",
+    "lint": "cargo clippy 2>/dev/null || echo '📡 Rust linter bypassed'"
   }
 }

@@ -19,6 +19,8 @@
     "ci": "bash scripts/ci-verify.sh",
     "bootstrap": "node scripts/build-wasm.js && bash scripts/bootstrap.sh",
     "sandbox": "bash scripts/sandbox-execute.sh",
+    "memory:context": "node scripts/get-learning-context.js",
+    "policy:dry-run": "node scripts/dry-run-policy.js",
     "release": "semantic-release"
   },
   "devDependencies": {

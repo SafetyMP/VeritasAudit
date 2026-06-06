@@ -99,6 +99,7 @@ export interface IBPComplianceState {
   crossFunctionalSynthesized: boolean;
   lastSynthesisReport?: string;
   lastSynthesisTimestamp?: string;
+  subagentBudgets?: Record<string, { tokenBudget: number; tokensConsumed: number }>;
 }
 
 export class IBPComplianceTracker {
@@ -109,7 +110,8 @@ export class IBPComplianceTracker {
     tokensConsumed: 0,
     specializedTasksExecuted: [],
     genericTasksExecuted: [],
-    crossFunctionalSynthesized: true
+    crossFunctionalSynthesized: true,
+    subagentBudgets: {}
   };
 
   constructor(private broadcastWS: BroadcastWSFn) {
@@ -120,6 +122,9 @@ export class IBPComplianceTracker {
     if (fs.existsSync(this.statePath)) {
       try {
         this.state = JSON.parse(fs.readFileSync(this.statePath, 'utf8'));
+        if (!this.state.subagentBudgets) {
+          this.state.subagentBudgets = {};
+        }
       } catch (err: any) {
         console.error('Failed to parse ibp-compliance-state.json:', err.message);
       }
@@ -154,7 +159,9 @@ export class IBPComplianceTracker {
     if (type === 'specialized') {
       if (!this.state.specializedTasksExecuted.includes(taskName)) {
         this.state.specializedTasksExecuted.push(taskName);
-        this.state.crossFunctionalSynthesized = false; // Reset synthesis on new code modifications
+        // NOTE: crossFunctionalSynthesized is NOT reset here. Task logging is a tracking
+        // action. Synthesis resets only when actual source files are modified (onFileModified).
+        // Resetting here created a loop: every new file write re-logged a task and wiped synthesis.
       }
     } else {
       if (!this.state.genericTasksExecuted.includes(taskName)) {
@@ -173,8 +180,59 @@ export class IBPComplianceTracker {
     this.broadcastWS('ibp_state_updated', this.getState());
   }
 
+  // Fix 2: Explicit synthesis invalidation — called when a source file is modified.
+  // Separating this from logTask() prevents the noise loop where every write reset synthesis.
+  public invalidateSynthesis() {
+    if (this.state.crossFunctionalSynthesized) {
+      this.state.crossFunctionalSynthesized = false;
+      this.saveState();
+      this.broadcastWS('ibp_state_updated', this.getState());
+    }
+  }
+
   public isBudgetAligned(): boolean {
     return this.state.tokensConsumed <= this.state.tokenBudget;
+  }
+
+  public getBudgetExhaustionPercentage(): number {
+    if (this.state.tokenBudget <= 0) return 100;
+    return Math.min(100, Math.floor((this.state.tokensConsumed / this.state.tokenBudget) * 100));
+  }
+
+  public recordSubagentTokenUsage(subagentId: string, estimatedTokens: number, maxBudget?: number) {
+    if (!this.state.subagentBudgets) {
+      this.state.subagentBudgets = {};
+    }
+    if (!this.state.subagentBudgets[subagentId]) {
+      this.state.subagentBudgets[subagentId] = {
+        tokenBudget: maxBudget || 20000,
+        tokensConsumed: 0
+      };
+    } else if (maxBudget !== undefined) {
+      this.state.subagentBudgets[subagentId].tokenBudget = maxBudget;
+    }
+    
+    this.state.subagentBudgets[subagentId].tokensConsumed += estimatedTokens;
+    this.state.tokensConsumed += estimatedTokens;
+    this.saveState();
+    this.broadcastWS('ibp_state_updated', this.getState());
+  }
+
+  public isSubagentBudgetAligned(subagentId: string): boolean {
+    if (!this.state.subagentBudgets || !this.state.subagentBudgets[subagentId]) {
+      return true;
+    }
+    const sub = this.state.subagentBudgets[subagentId];
+    return sub.tokensConsumed <= sub.tokenBudget;
+  }
+
+  public getSubagentBudgetExhaustionPercentage(subagentId: string): number {
+    if (!this.state.subagentBudgets || !this.state.subagentBudgets[subagentId]) {
+      return 0;
+    }
+    const sub = this.state.subagentBudgets[subagentId];
+    if (sub.tokenBudget <= 0) return 100;
+    return Math.min(100, Math.floor((sub.tokensConsumed / sub.tokenBudget) * 100));
   }
 
   public addTokenBudget(amount: number) {
@@ -188,6 +246,7 @@ export class IBPComplianceTracker {
     this.state.genericTasksExecuted = [];
     this.state.crossFunctionalSynthesized = true;
     this.state.tokensConsumed = 0;
+    this.state.subagentBudgets = {};
     this.saveState();
     this.broadcastWS('ibp_state_updated', this.getState());
   }
@@ -218,10 +277,12 @@ export interface PLMComplianceState {
 
 export class PLMComplianceTracker {
   private statePath = path.resolve(process.cwd(), '.memory/plm-compliance-state.json');
+  // Tracks last seen version per package.json path for version-bump detection (Fix 3)
+  private _lastKnownPackageVersion: Record<string, string> = {};
   private state: PLMComplianceState = {
     activeRequirementId: null,
     modifiedFiles: [],
-    associatedTestsWritten: true,
+    associatedTestsWritten: false,  // Zero-trust default: agents must write tests before committing
     hasApiDrift: false,
     driftVerified: true,
     releaseVersionUpdated: true,
@@ -273,11 +334,10 @@ export class PLMComplianceTracker {
   public setRequirement(id: string) {
     this.state.activeRequirementId = id;
     this.state.modifiedFiles = [];
-    this.state.associatedTestsWritten = true;
-    this.state.hasApiDrift = false;
-    this.state.driftVerified = true;
-    this.state.releaseVersionUpdated = true;
-    this.state.changelogUpdated = true;
+    // NOTE: Only reset per-session tracking state. hasApiDrift, driftVerified,
+    // releaseVersionUpdated, and changelogUpdated are intentionally preserved
+    // across requirement changes to prevent cycling IDs from silently clearing gates.
+    this.state.associatedTestsWritten = false;  // New requirement = tests not yet written
     this.saveState();
     this.broadcastWS('plm_state_updated', this.getState());
   }
@@ -287,7 +347,7 @@ export class PLMComplianceTracker {
       if (!this.state.modifiedFiles.includes(filePath)) {
         this.state.modifiedFiles.push(filePath);
       }
-      
+
       const isTestFile = filePath.includes('.test.') || filePath.includes('.spec.');
       if (isTestFile) {
         this.state.associatedTestsWritten = true;
@@ -302,8 +362,27 @@ export class PLMComplianceTracker {
         this.state.driftVerified = false;
       }
 
+      // Fix 3: Only set releaseVersionUpdated if the package.json write includes an actual
+      // version field change. Writing package.json to add a dependency should NOT clear the
+      // version-bump gate — only an explicit version bump should.
       if (filePath.endsWith('package.json')) {
-        this.state.releaseVersionUpdated = true;
+        try {
+          const absPath = path.resolve(process.cwd(), filePath);
+          if (fs.existsSync(absPath)) {
+            const pkg = JSON.parse(fs.readFileSync(absPath, 'utf8'));
+            const version: string = pkg.version || '';
+            const prevVersion: string = this._lastKnownPackageVersion[filePath] || '';
+            if (!prevVersion || version !== prevVersion) {
+              this._lastKnownPackageVersion[filePath] = version;
+              // Only mark updated if version actually changed (not on first write)
+              if (prevVersion && version !== prevVersion) {
+                this.state.releaseVersionUpdated = true;
+              }
+            }
+          }
+        } catch {
+          // If we cannot read the file (write in-progress), do not update the gate
+        }
       } else if (filePath.endsWith('CHANGELOG.md')) {
         this.state.changelogUpdated = true;
       }

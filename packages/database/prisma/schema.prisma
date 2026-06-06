@@ -32,6 +32,11 @@ model AuditReceipt {
   signature_sig       String
   receiptHash         String   @default("")
   previousReceiptHash String   @default("")
+  actualTokensInput   Int?
+  actualTokensOutput  Int?
+  actualTokensCached  Int?
+  subagentId          String?
+  subagentMaxBudget   Float?
 }
 
 model SecurityFinding {
