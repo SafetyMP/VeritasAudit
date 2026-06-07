@@ -59,6 +59,7 @@ forbid(
   && (
     resource.args.path == "policy.cedar"
     || resource.args.path == "protect-mcp.config.json"
+    || resource.args.path like "scripts/*"
     || resource.args.path.contains(".env")
   )
   && !(principal == "sb:issuer:security-sme" || principal == "sb:issuer:de073ae64e43")
