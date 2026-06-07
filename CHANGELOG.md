@@ -1,3 +1,15 @@
+# [1.7.0](https://github.com/SafetyMP/FidusGate/compare/v1.6.0...v1.7.0) (2026-06-07)
+
+
+### Bug Fixes
+
+* **security:** revert unauthorized agent bypasses of FidusGate controls ([8ee8a50](https://github.com/SafetyMP/FidusGate/commit/8ee8a506b92d46c1f36043d45e4cd3210084866a))
+
+
+### Features
+
+* **security:** cryptographic principal signature verification on privileged tool calls ([ee24914](https://github.com/SafetyMP/FidusGate/commit/ee2491478b26b30a14816af5a06729d48c3ad6ba))
+
 # [1.6.0](https://github.com/SafetyMP/FidusGate/compare/v1.5.0...v1.6.0) (2026-06-07)
 
 
