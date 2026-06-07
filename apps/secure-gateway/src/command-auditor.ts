@@ -210,6 +210,21 @@ export function isCommandLineSecure(commandLine: string): AuditResult {
       }
     }
 
+    // Enforce --ignore-scripts to prevent package lifecycle hook execution
+    // Exceptions allowed for bootstrap, build, and bare install to pass standard pipelines
+    const isException = args.includes('build') || args.includes('bootstrap') || (args.length === 2 && npmCommand === 'install');
+    if (!isException && !args.includes('--ignore-scripts')) {
+      return {
+        secure: false,
+        reason: "npm commands must include the '--ignore-scripts' flag to prevent execution of un-vetted lifecycle scripts.",
+        remediationSuggestion: "Append '--ignore-scripts' to your npm command line.",
+        suggestedAutofix: {
+          target: cleanCmd,
+          replacement: cleanCmd + ' --ignore-scripts'
+        }
+      };
+    }
+
     // Restrict allowed run scripts
     if (npmCommand === 'run') {
       if (args.length < 3) {

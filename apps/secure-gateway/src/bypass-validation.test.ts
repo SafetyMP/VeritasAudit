@@ -106,7 +106,7 @@ test('FidusGate Advanced Bypass Validation Tests', async (t) => {
 
     // 2. Verify executing npm run test is permitted
     await subT.test('Step B: Cedar policy & Command Auditor must allow executing sandbox-execute test scripts', () => {
-      const testCmd = 'bash scripts/sandbox-execute.sh "npm run test" "."';
+      const testCmd = 'bash scripts/sandbox-execute.sh "npm run test --ignore-scripts" "."';
       const auditResult = isCommandLineSecure(testCmd);
       assert.strictEqual(auditResult.secure, true, 'Command auditor must allow nested test runs');
 
@@ -148,6 +148,19 @@ test('FidusGate Advanced Bypass Validation Tests', async (t) => {
           fs.unlinkSync(tmpPkgPath);
         }
       }
+    });
+  });
+
+  await t.test('Vector 3: Gated Execution & Principal Attestation Hardening', async (subT) => {
+    await subT.test('Step A: npm run test without --ignore-scripts must be blocked', () => {
+      const res = isCommandLineSecure('npm run test');
+      assert.strictEqual(res.secure, false, 'npm commands without --ignore-scripts must be blocked');
+      assert.ok(res.reason?.includes('ignore-scripts'), 'Blocked reason must mention ignore-scripts');
+    });
+
+    await subT.test('Step B: npm run test with --ignore-scripts must be allowed', () => {
+      const res = isCommandLineSecure('npm run test --ignore-scripts');
+      assert.strictEqual(res.secure, true, 'npm commands with --ignore-scripts must be allowed');
     });
   });
 });

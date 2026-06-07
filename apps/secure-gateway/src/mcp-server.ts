@@ -5,11 +5,76 @@ import { FidusGateDatabase } from '@fidusgate/database';
 import { execSync } from 'node:child_process';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import * as crypto from 'node:crypto';
 import {
   DevOpsComplianceTracker,
   IBPComplianceTracker,
   PLMComplianceTracker
 } from './compliance-trackers';
+
+const PUBLIC_KEY_MAP: Record<string, string> = {
+  'sb:issuer:de073ae64e43': '302a300506032b6570032100df20721389de78a2e10fc39c8942b0d07412ae89fd2b13c7809aef823101de83',
+  'sb:issuer:pm-sme': '302a300506032b6570032100cf20721389de78a2e10fc39c8942b0d07412ae89fd2b13c7809aef823101de81',
+  'sb:issuer:architecture-sme': '302a300506032b6570032100cf20721389de78a2e10fc39c8942b0d07412ae89fd2b13c7809aef823101de82',
+  'sb:issuer:backend-sme': '302a300506032b6570032100cf20721389de78a2e10fc39c8942b0d07412ae89fd2b13c7809aef823101de83',
+  'sb:issuer:frontend-sme': '302a300506032b6570032100cf20721389de78a2e10fc39c8942b0d07412ae89fd2b13c7809aef823101de84',
+  'sb:issuer:qa-sme': '302a300506032b6570032100cf20721389de78a2e10fc39c8942b0d07412ae89fd2b13c7809aef823101de85',
+  'sb:issuer:security-sme': '302a300506032b6570032100cf20721389de78a2e10fc39c8942b0d07412ae89fd2b13c7809aef823101de86',
+  'sb:issuer:devops-sme': '302a300506032b6570032100cf20721389de78a2e10fc39c8942b0d07412ae89fd2b13c7809aef823101de87'
+};
+
+function verifyAgentPrincipalSignature(toolName: string, args: any): boolean {
+  const principal = args.principal;
+  if (!principal || !principal.startsWith('sb:issuer:')) {
+    // Standard un-privileged agent. No signature required.
+    return true;
+  }
+
+  const publicKeyHex = PUBLIC_KEY_MAP[principal];
+  if (!publicKeyHex) {
+    console.error(`[FidusGate] Cryptographic verification failed: Principal '${principal}' is not recognized.`);
+    return false;
+  }
+
+  const signatureHex = args.signature;
+  if (!signatureHex) {
+    console.error(`[FidusGate] Cryptographic verification failed: Signature parameter is missing for privileged principal '${principal}'.`);
+    return false;
+  }
+
+  try {
+    const payload: Record<string, any> = {
+      principal: principal,
+      tool: toolName,
+      args: {}
+    };
+
+    if (toolName === 'execute_command') {
+      payload.args = { commandLine: args.commandLine };
+    } else if (toolName === 'write_file') {
+      payload.args = { path: args.path, content: args.content };
+    } else if (toolName === 'patch_file') {
+      payload.args = {
+        path: args.path,
+        targetContent: args.targetContent,
+        replacementContent: args.replacementContent
+      };
+    }
+
+    const data = Buffer.from(JSON.stringify(payload));
+    const publicKey = crypto.createPublicKey({
+      key: Buffer.from(publicKeyHex, 'hex'),
+      format: 'der',
+      type: 'spki'
+    });
+    const signature = Buffer.from(signatureHex, 'hex');
+
+    return crypto.verify(null, data, publicKey, signature);
+  } catch (err: any) {
+    console.error(`[FidusGate] Exception in verifying principal signature:`, err.message);
+    return false;
+  }
+}
 
 const db = new FidusGateDatabase();
 const configPath = path.resolve(process.cwd(), 'protect-mcp.config.json');
@@ -256,6 +321,10 @@ async function handleMcpRequest(req: any): Promise<any> {
                 principal: {
                   type: 'string',
                   description: 'Optional agent principal (e.g. sb:issuer:devops-sme, sb:issuer:de073ae64e43) for Cedar policy enforcement.'
+                },
+                signature: {
+                  type: 'string',
+                  description: 'Optional Ed25519 signature in hex format (required if a privileged principal is specified).'
                 }
               },
               required: ['commandLine']
@@ -278,6 +347,10 @@ async function handleMcpRequest(req: any): Promise<any> {
                 principal: {
                   type: 'string',
                   description: 'Optional agent principal (e.g. sb:issuer:devops-sme, sb:issuer:de073ae64e43) for Cedar policy enforcement.'
+                },
+                signature: {
+                  type: 'string',
+                  description: 'Optional Ed25519 signature in hex format (required if a privileged principal is specified).'
                 }
               },
               required: ['path', 'content']
@@ -334,6 +407,10 @@ async function handleMcpRequest(req: any): Promise<any> {
                 principal: {
                   type: 'string',
                   description: 'Optional agent principal (e.g. sb:issuer:devops-sme, sb:issuer:de073ae64e43) for Cedar policy enforcement.'
+                },
+                signature: {
+                  type: 'string',
+                  description: 'Optional Ed25519 signature in hex format (required if a privileged principal is specified).'
                 }
               },
               required: ['path', 'targetContent', 'replacementContent']
@@ -409,6 +486,23 @@ async function handleMcpRequest(req: any): Promise<any> {
         return {
           jsonrpc: '2.0',
           error: { code: -32602, message: 'Invalid params: commandLine is required' },
+          id
+        };
+      }
+
+      // Cryptographic Principal Verification Check
+      if (!verifyAgentPrincipalSignature(name, args)) {
+        return {
+          jsonrpc: '2.0',
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: `❌ FidusGate Cryptographic Attestation Blocked: Privileged principal '${args.principal}' signature verification failed.`
+              }
+            ],
+            isError: true
+          },
           id
         };
       }
@@ -527,6 +621,23 @@ async function handleMcpRequest(req: any): Promise<any> {
         return {
           jsonrpc: '2.0',
           error: { code: -32602, message: 'Invalid params: path and content are required' },
+          id
+        };
+      }
+
+      // Cryptographic Principal Verification Check
+      if (!verifyAgentPrincipalSignature(name, args)) {
+        return {
+          jsonrpc: '2.0',
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: `❌ FidusGate Cryptographic Attestation Blocked: Privileged principal '${args.principal}' signature verification failed.`
+              }
+            ],
+            isError: true
+          },
           id
         };
       }
@@ -705,6 +816,23 @@ async function handleMcpRequest(req: any): Promise<any> {
         return {
           jsonrpc: '2.0',
           error: { code: -32602, message: 'Invalid params: path, targetContent and replacementContent are required' },
+          id
+        };
+      }
+
+      // Cryptographic Principal Verification Check
+      if (!verifyAgentPrincipalSignature(name, args)) {
+        return {
+          jsonrpc: '2.0',
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: `❌ FidusGate Cryptographic Attestation Blocked: Privileged principal '${args.principal}' signature verification failed.`
+              }
+            ],
+            isError: true
+          },
           id
         };
       }
