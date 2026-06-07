@@ -93,7 +93,8 @@ async function run() {
             receiptVerificationFailures++;
           }
         } else {
-          console.log(`⚠️  Warning: No cryptographic FidusGate attestation found for this commit.`);
+          console.error(`❌ SECURITY VIOLATION: No cryptographic FidusGate attestation found for commit ${hash.substring(0, 7)}!`);
+          receiptVerificationFailures++;
         }
       }
     }

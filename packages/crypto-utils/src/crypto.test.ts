@@ -193,4 +193,83 @@ test('Ed25519 Public-Key Cryptography Tests', async (t) => {
     const isTamperedPayloadValid = verifyReceipt(tamperedPayloadReceipt, masterKeys.publicKeyHex);
     assert.strictEqual(isTamperedPayloadValid, false, 'Should reject receipt if payload is tampered');
   });
+
+  await t.test('VaultKMSProvider signing and fallback', () => {
+    const keys = generateKeyPair();
+    const payload: AuditReceiptPayload = {
+      type: 'protectmcp:decision',
+      tool_name: 'read_file',
+      decision: 'allow',
+      policy_digest: 'sha256:8f413a9de010',
+      issued_at: new Date().toISOString(),
+      issuer_id: 'sb:issuer:test'
+    };
+
+    // Trigger Vault path by setting process.env
+    process.env.VAULT_ADDR = 'http://mock-vault:8200';
+    process.env.VAULT_TOKEN = 'mock-token';
+    process.env.KMS_KEY_ID = 'mock-key';
+
+    // The signPayload should run, catch connection error (since host is mock), and fallback to local signing
+    const receipt = signPayload(payload, keys.privateKeyHex, 'sb:issuer:test');
+    assert.strictEqual(receipt.payload.tool_name, 'read_file');
+    assert.ok(receipt.signature.sig);
+
+    // Verify receipt should also fallback to local offline verify
+    const isValid = verifyReceipt(receipt, keys.publicKeyHex);
+    assert.strictEqual(isValid, true, 'Verification fallback should succeed');
+
+    // Clean up
+    delete process.env.VAULT_ADDR;
+    delete process.env.VAULT_TOKEN;
+    delete process.env.KMS_KEY_ID;
+  });
+
+  await t.test('GcpKMSProvider signing and fallback', () => {
+    const keys = generateKeyPair();
+    const payload: AuditReceiptPayload = {
+      type: 'protectmcp:decision',
+      tool_name: 'read_file',
+      decision: 'allow',
+      policy_digest: 'sha256:8f413a9de010',
+      issued_at: new Date().toISOString(),
+      issuer_id: 'sb:issuer:test'
+    };
+
+    process.env.GCP_PROJECT_ID = 'mock-project';
+    process.env.GCP_KMS_KEY_NAME = 'mock-key';
+
+    const receipt = signPayload(payload, keys.privateKeyHex, 'sb:issuer:test');
+    assert.strictEqual(receipt.payload.tool_name, 'read_file');
+    assert.ok(receipt.signature.sig);
+
+    const isValid = verifyReceipt(receipt, keys.publicKeyHex);
+    assert.strictEqual(isValid, true, 'Verification fallback should succeed');
+
+    delete process.env.GCP_PROJECT_ID;
+    delete process.env.GCP_KMS_KEY_NAME;
+  });
+
+  await t.test('AwsKMSProvider signing and fallback', () => {
+    const keys = generateKeyPair();
+    const payload: AuditReceiptPayload = {
+      type: 'protectmcp:decision',
+      tool_name: 'read_file',
+      decision: 'allow',
+      policy_digest: 'sha256:8f413a9de010',
+      issued_at: new Date().toISOString(),
+      issuer_id: 'sb:issuer:test'
+    };
+
+    process.env.AWS_KMS_KEY_ID = 'mock-key';
+
+    const receipt = signPayload(payload, keys.privateKeyHex, 'sb:issuer:test');
+    assert.strictEqual(receipt.payload.tool_name, 'read_file');
+    assert.ok(receipt.signature.sig);
+
+    const isValid = verifyReceipt(receipt, keys.publicKeyHex);
+    assert.strictEqual(isValid, true, 'Verification fallback should succeed');
+
+    delete process.env.AWS_KMS_KEY_ID;
+  });
 });

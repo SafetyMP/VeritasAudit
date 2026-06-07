@@ -470,7 +470,26 @@ function handleCli() {
   const fs = require('fs');
   const path = require('path');
   const args = process.argv.slice(2);
-  
+
+  if (args[0] === '--move-enforcer') {
+    try {
+      console.log('Moving ebpf-enforcer.py to scripts/ebpf-enforcer.py...');
+      const src = path.resolve(process.cwd(), 'packages/crypto-utils/src/ebpf-enforcer.py');
+      const dest = path.resolve(process.cwd(), 'scripts/ebpf-enforcer.py');
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, fs.readFileSync(src));
+      fs.chmodSync(dest, '755');
+      if (fs.existsSync(src)) {
+        fs.unlinkSync(src);
+      }
+      console.log('Successfully moved and set executable permissions on scripts/ebpf-enforcer.py!');
+      process.exit(0);
+    } catch (e: any) {
+      console.error(e);
+      process.exit(1);
+    }
+  }
+
   if (args[0] === '--verify' && args[1]) {
     try {
       const receiptPath = path.resolve(process.cwd(), args[1]);

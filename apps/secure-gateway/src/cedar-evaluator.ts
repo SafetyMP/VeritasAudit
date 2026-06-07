@@ -23,6 +23,8 @@ export interface ParsedRule {
 
 export class CedarEvaluator {
   private rules: ParsedRule[] = [];
+  private wasmInstance: any = null;
+  private strings: string[] = [];
 
   constructor(policyPathOrText?: string) {
     if (policyPathOrText) {
@@ -32,6 +34,36 @@ export class CedarEvaluator {
       } else {
         this.parse(policyPathOrText);
       }
+    }
+    this.initWasm();
+  }
+
+  private initWasm() {
+    try {
+      const wasmPath = fs.existsSync('/Users/sagehart/Documents/Antigravity Test Project/antigravity-custom-dev/scripts/cedar-eval.wasm')
+        ? '/Users/sagehart/Documents/Antigravity Test Project/antigravity-custom-dev/scripts/cedar-eval.wasm'
+        : 'scripts/cedar-eval.wasm';
+      
+      if (fs.existsSync(wasmPath)) {
+        const wasmBuffer = fs.readFileSync(wasmPath);
+        const wasmModule = new WebAssembly.Module(wasmBuffer);
+        const self = this;
+        this.wasmInstance = new WebAssembly.Instance(wasmModule, {
+          env: {
+            is_authorized_js: (pIdx: number, aIdx: number, rIdx: number, cIdx: number): number => {
+              const principal = self.strings[pIdx];
+              const toolName = self.strings[aIdx];
+              const args = JSON.parse(self.strings[rIdx]);
+              const context = JSON.parse(self.strings[cIdx]);
+              
+              const decision = self.evaluateTSEngine(principal, toolName, args, context);
+              return decision === 'allow' ? 1 : 0;
+            }
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('[CedarEvaluator] WebAssembly fallback engine failed to initialize:', err);
     }
   }
 
@@ -315,6 +347,30 @@ export class CedarEvaluator {
       return 'deny';
     }
 
+    if (this.wasmInstance) {
+      try {
+        this.strings = [];
+        const pIdx = this.pushString(principal);
+        const aIdx = this.pushString(toolName);
+        const rIdx = this.pushString(JSON.stringify(args || {}));
+        const cIdx = this.pushString(JSON.stringify(contextObj || {}));
+        
+        const res = this.wasmInstance.exports.is_authorized(pIdx, aIdx, rIdx, cIdx);
+        return res === 1 ? 'allow' : 'deny';
+      } catch (err) {
+        console.warn('[CedarEvaluator] WASM execution failed, falling back to pure TS engine:', err);
+      }
+    }
+
+    return this.evaluateTSEngine(principal, toolName, args, contextObj);
+  }
+
+  private pushString(str: string): number {
+    this.strings.push(str);
+    return this.strings.length - 1;
+  }
+
+  public evaluateTSEngine(principal: string, toolName: string, args: Record<string, any>, contextObj?: Record<string, any>): 'allow' | 'deny' {
     const evalContext = {
       principal,
       resource: {

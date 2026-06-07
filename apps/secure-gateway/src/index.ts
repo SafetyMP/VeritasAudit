@@ -18,6 +18,7 @@ import { startConsensusExpiryWorker } from './cron-worker';
 import { isPromptSecure } from './ai-firewall';
 import { auditConsensusRequest } from './consensus-auditor';
 import { auditSandboxSyscalls } from './ebpf-monitor';
+import { createProxyVerifier } from './proxy-verifier';
 import * as ws from 'ws';
 
 // Active WebSocket connections tracking
@@ -222,6 +223,7 @@ fs.watch(process.cwd(), (eventType, filename) => {
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.use('/api/proxy', (req, res, next) => createProxyVerifier(cedarEvaluator)(req, res, next));
 
 // Global emergency Kill-Switch / Circuit Breaker Middleware
 app.use(async (req, res, next) => {

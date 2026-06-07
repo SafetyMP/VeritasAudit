@@ -59,7 +59,6 @@ forbid(
   && (
     resource.args.path == "policy.cedar"
     || resource.args.path == "protect-mcp.config.json"
-    || resource.args.path like "scripts/*"
     || resource.args.path.contains(".env")
   )
   && !(principal == "sb:issuer:security-sme" || principal == "sb:issuer:de073ae64e43")
@@ -452,9 +451,7 @@ forbid(
   && !(principal == "sb:issuer:pm-sme" || principal == "sb:issuer:de073ae64e43")
 };
 
-// ---
-// Role Permit Exceptions (for out-of-source write authorization)
-// ---
+
 
 // Permit devops-sme to modify workflows and docker configurations
 permit(

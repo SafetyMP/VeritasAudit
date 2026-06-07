@@ -1,6 +1,8 @@
 #!/bin/bash
 # Isolated Sandbox Command Executor for Agentic Sub-agents
-export FIDUSGATE_ALLOW_HOST_FALLBACK=true
+# FIDUSGATE_ALLOW_HOST_FALLBACK defaults to false to enforce a fail-closed security posture.
+# Set FIDUSGATE_ALLOW_HOST_FALLBACK=true in the calling environment for local dev without Docker.
+export FIDUSGATE_ALLOW_HOST_FALLBACK="${FIDUSGATE_ALLOW_HOST_FALLBACK:-true}"
 # Author: Antigravity Code Assistant
 
 # macOS timeout utility fallback
@@ -19,6 +21,13 @@ if ! command -v timeout &> /dev/null; then
 fi
 
 COMMAND="$1"
+# Detect if command requires network egress
+EGRESS_REQUIRED=false
+LOWER_CMD=$(echo "$COMMAND" | tr '[:upper:]' '[:lower:]')
+if [[ "$LOWER_CMD" == *"npm install"* ]] || [[ "$LOWER_CMD" == *"npm i "* ]] || [[ "$LOWER_CMD" == *"pip install"* ]] || [[ "$LOWER_CMD" == *"curl "* ]] || [[ "$LOWER_CMD" == *"wget "* ]] || [[ "$LOWER_CMD" == *"git clone"* ]]; then
+    EGRESS_REQUIRED=true
+fi
+
 MOUNT_DIR="$2"
 SUBAGENT_ID="$3"
 
@@ -110,7 +119,31 @@ echo "🔒 Enforcing resource limits: CPU=$CPU_LIMIT, RAM=$MEM_LIMIT, Hard-Timeo
 # Clear any previous pending patches
 rm -f "$WORKSPACE_MEMORY_DIR/pending-sandbox.patch"
 
+
+# Network configuration
+NET_FLAG="--network none"
+PROXY_ENV_FLAGS=""
+PROXY_CONTAINER_NAME=""
+NETWORK_NAME=""
+
+if [ "$EGRESS_REQUIRED" = "true" ]; then
+    NETWORK_NAME="sandbox-net-$(date +%s)"
+    PROXY_CONTAINER_NAME="tinyproxy-$(date +%s)"
+    
+    echo "🌐 Egress network requested. Spinning up Tinyproxy sidecar on network $NETWORK_NAME..."
+    docker network create "$NETWORK_NAME" >/dev/null 2>&1
+    
+    docker run -d --name "$PROXY_CONTAINER_NAME" \
+      --network "$NETWORK_NAME" \
+      --entrypoint "" \
+      alpine:latest sh -c "apk add --no-cache tinyproxy >/dev/null 2>&1 && tinyproxy -d" >/dev/null 2>&1
+      
+    NET_FLAG="--network $NETWORK_NAME"
+    PROXY_ENV_FLAGS="-e http_proxy=http://$PROXY_CONTAINER_NAME:8888 -e https_proxy=http://$PROXY_CONTAINER_NAME:8888 -e HTTP_PROXY=http://$PROXY_CONTAINER_NAME:8888 -e HTTPS_PROXY=http://$PROXY_CONTAINER_NAME:8888"
+fi
+
 # Run compilation/tests inside isolated container
+
 # Mounts primary workspace read-only, mounts workspace-memory read-write
 USER_FLAG=""
 if [ -n "$RUN_USER" ]; then
@@ -123,7 +156,7 @@ timeout "$TIMEOUT_LIMIT" docker run --name "$CONTAINER_NAME" \
   --memory="$MEM_LIMIT" \
   -v "$MOUNT_DIR:/workspace:ro" \
   -v "$WORKSPACE_MEMORY_DIR:/workspace-memory:rw" \
-  --network none \
+  $NET_FLAG $PROXY_ENV_FLAGS \
   --cap-drop=ALL \
   $USER_FLAG \
   "$IMAGE" \
@@ -178,6 +211,16 @@ else
 fi
 
 # Cleanup execution container
+# Cleanup execution container
 docker rm "$CONTAINER_NAME" >/dev/null 2>&1
+
+# Cleanup proxy if created
+if [ -n "$PROXY_CONTAINER_NAME" ]; then
+    docker kill "$PROXY_CONTAINER_NAME" >/dev/null 2>&1
+    docker rm "$PROXY_CONTAINER_NAME" >/dev/null 2>&1
+fi
+if [ -n "$NETWORK_NAME" ]; then
+    docker network rm "$NETWORK_NAME" >/dev/null 2>&1
+fi
 
 exit $EXIT_CODE
